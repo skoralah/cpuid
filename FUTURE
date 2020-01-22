@@ -1,0 +1,52 @@
+Intel:
+   Cooper Lake: what is its FMS?  Is it a Skylake or a Sunny Cove?
+   
+   Amber Lake refresh: What is the FMS for its i*-10000 parts?
+
+   Cannon Lake (0,6),(6,6) spec update.
+   Ice Lake (0,6),(6,10) spec update.
+   Ice Lake (0,6),(6,12) spec update.
+   Tiger Lake (0,6),(8,12) spec update.
+   Willow Cove (~2020)
+   Golden Cove (~2021).
+   Sapphire Rapids (~2021).
+
+   Atom (Lakefield) [Tremont] spec update.
+   Atom [Gracemont] (~2021).
+
+AMD:
+   Zen 2 revision guide.
+   Zen 3.
+
+Zhaoxin: any information:
+   1st gen: ZhangJiang  (incl. KaiXian (desktop), Kaisheng (server))
+   2nd gen: WuDaoKou    (more models than (0,7),(1,11)?)
+   3rd gen: LuJiaZui    (e.g. KX-U6880)
+
+--------------------------------------------------------------------------------
+
+These are not really future, but I have very little data on them:
+
+   Intel: Xeon Phi (Knights Ferry) (0,1),(0,0).
+   Intel: Xeon Phi (Knights Mill) (0,6),(8,5).
+   Intel: Atom Z3400 (Merrifield) [Silvermont] (0,6),(4,10).
+   Intel: Atom S12x9 (Briarwood) is based on Cedar Trail, but the Intel docs
+          provide no CPUID identification values.  And I can find no examples
+          online.  Does anyone know the CPUID family/model/steppings?
+   Intel: I can find no cpuid information on Atom C1000.
+          (Possibly it is (0,6),(2,7) or (0,6),(3,5)?)
+   AMD: Geneva (the Athlon II Neo counterpart of the Athlon II mobile Champlain, 
+                or the V-Series Champlain?) 
+               [not seen in any revision guides yet, though]
+   VIA: Nano 1000/2000 (Isaiah)
+   VIA: Nano 3000
+   VIA: 0xc0000002 leaf (I have very limited info)
+   VIA: 0xc0000003 leaf (I have no info)
+
+--------------------------------------------------------------------------------
+
+Stashes of cpuid information:
+
+   http://instlatx64.atw.hu (aka https://github.com/InstLatx64/InstLatx64)
+   http://www.cpu-world.com
+   http://valid.x86.fr/records.html
