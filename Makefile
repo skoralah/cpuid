@@ -8,7 +8,7 @@ CFL=$(CPPFLAGS) $(CFLAGS) $(CISA) -Wall -Wextra -Wshadow -Wcast-align -Wredundan
 INSTALL_STRIP=-s
 
 PACKAGE=cpuid
-VERSION=20200122
+VERSION=20200127
 RELEASE=1
 
 PROG=$(PACKAGE)

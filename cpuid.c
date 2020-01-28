@@ -27,8 +27,20 @@
 
 // LX* indicates features that I have seen no documentation for, but which are
 // used by the Linux kernel (which is good evidence that they're correct).
-// The "hook" to find these generally is a scan for X86_FEATURE_* flags in:
+// The "hook" to find these generally is a X86_FEATURE_* flag in:
 //    arch/x86/include/asm/cpufeatures.h
+
+// Xen* indicates features that I have seen no documentation for, but which are
+// used by the Xen hypervisor.  They are listed in:
+//    tools/libxl/libxl_cpuid.c
+
+// Qemu* indicates features that I have seen no documentation for, but which are
+// used by the Qemu hypervisor.  They are listed in:
+//    target/i386/cpu.c
+
+// SKC* indicates features that I have seen no (or incomplete) documentation
+// for, but which were sent to me in patch form by Smita Koralahalli
+// Channabasappa of AMD.
 
 #ifdef __linux__
 #define USE_CPUID_MODULE
@@ -1889,10 +1901,11 @@ decode_uarch_intel(unsigned int  val,
    //       [Cascade Lake] = Skylake + DL Boost + spectre/meltdown fixes
    //    [Kaby Lake]       = Skylake, 14nm+
    //    [Coffee Lake]     = Kaby Lake, 14nm++, 1.5x CPUs/die
-   //       [Cannon Lake]  = Coffee Lake + AVX-512
+   //       [Palm Cove]    = Coffee Lake, 10nm, AVX-512
    //
    // That is a more manageable set.
    //
+   // NOTE: Ice Lake & Tiger Lake are part of the Sunny Cove uarch.
 
    START;
    F   (    0, 4,                                                               *f = "i486");          // *p depends on core
@@ -3762,9 +3775,12 @@ decode_synth_amd(unsigned int         val,
    FMS (8,15,  0, 8,  2,     "AMD Ryzen (Pinnacle Ridge PiR-B2)");
    FM  (8,15,  0, 8,         "AMD Ryzen (Pinnacle Ridge)");
    FM  (8,15,  1, 8,         "AMD Ryzen (Picasso)"); // found only on en.wikichip.org
-   FMQ (8,15,  3, 1,     dR, "AMD Ryzen (Castle Peak)"); // found only on en.wikichip.org
-   FMQ (8,15,  3, 1,     sE, "AMD EPYC (Rome)"); // found only on en.wikichip.org
-   FM  (8,15,  3, 1,         "AMD Ryzen (Castle Peak) / EPYC (Rome)"); // found only on en.wikichip.org
+   FMSQ(8,15,  3, 1,  0, dR, "AMD Ryzen (Castle Peak B0)");
+   FMQ (8,15,  3, 1,     dR, "AMD Ryzen (Castle Peak)");
+   FMSQ(8,15,  3, 1,  0, sE, "AMD EPYC (Rome B0)");
+   FMQ (8,15,  3, 1,     sE, "AMD EPYC (Rome)");
+   FMS (8,15,  3, 1,  0,     "AMD Ryzen (Castle Peak B0) / EPYC (Rome B0)");
+   FM  (8,15,  3, 1,         "AMD Ryzen (Castle Peak) / EPYC (Rome)");
    FM  (8,15,  5, 0,         "AMD DG02SRTBP4MFA (Fenghuang 15FF)"); // internal model, only instlatx64 example
    FMS (8,15,  7, 1,  0,     "AMD Ryzen (Matisse B0)"); // undocumented, but samples from Steven Noonan
    FM  (8,15,  7, 1,         "AMD Ryzen (Matisse)"); // undocumented, but samples from Steven Noonan
@@ -4054,7 +4070,7 @@ print_x_synth_amd(unsigned int  val)
 {
    ccstring  synth = decode_x_synth_amd(val);
    
-   printf("      (simple synth) = ");
+   printf("      (simple synth)  = ");
    if (synth != NULL) {
       printf("%s", synth);
    }
@@ -4077,7 +4093,7 @@ print_x_synth_hygon(unsigned int  val)
 {
    ccstring  synth = decode_x_synth_hygon(val);
    
-   printf("      (simple synth) = ");
+   printf("      (simple synth)  = ");
    if (synth != NULL) {
       printf("%s", synth);
    }
@@ -4201,6 +4217,13 @@ print_synth(const code_stash_t*  stash)
    }
    printf("\n");
 }
+
+#define Synth_Family(value) \
+   (BIT_EXTRACT_LE(value, 20, 28) \
+    + BIT_EXTRACT_LE(value, 8, 12))
+#define Synth_Model(value) \
+   ((BIT_EXTRACT_LE(value, 16, 20) << 4) \
+    + BIT_EXTRACT_LE(value, 4, 8))
 
 #define GET_ApicIdCoreIdSize(val_80000008_ecx) \
    (BIT_EXTRACT_LE((val_80000008_ecx), 0, 4))
@@ -4358,6 +4381,10 @@ static void print_mp_synth(const struct mp*  mp)
 
 static int bits_needed(unsigned long  v)
 {
+#if __GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__ >= 30400
+   return v <= 1 ? 0 : (8 * sizeof(long) - __builtin_clzl(v-1));
+#else
+   if (v == 0) return 0;
    int  result;
 #if defined(__x86_64) && !defined(__ILP32__)
    asm("movq %[v],%%rax;"
@@ -4387,6 +4414,7 @@ static int bits_needed(unsigned long  v)
        : "eax", "ecx");
 #endif
    return result;
+#endif
 }
 
 #define GET_X2APIC_WIDTH(val_b_eax) \
@@ -4439,7 +4467,18 @@ static void print_apic_synth (code_stash_t*  stash)
       ** Logic deduced by analogy: As Intel's decode_mp_synth code is to AMD's
       ** decode_mp_synth code, so is Intel's APIC synth code to this.
       **
-      ** The CU (CMT "compute unit") logic was a logical extension.
+      ** For Families 10h-16h, the CU (CMT "compute unit") logic was a
+      ** logical extension.
+      **
+      ** For Families 17h and later, terminology changed to reflect that
+      ** the Family 10h-16h cores had been sharing resources significantly,
+      ** similarly to (but less drastically than) SMT threads:
+      **    Family 10h-16h => Family 17h
+      **    ----------------------------
+      **    CU             => core   
+      **    core           => thread
+      ** And leaf 0x8000001e/ebx is used for smt_count, because 1/ebx is
+      ** unreliable.
       */
       if (IS_HTT(stash->val_1_edx)
           && GET_ApicIdCoreIdSize(stash->val_80000008_ecx) != 0) {
@@ -4451,10 +4490,17 @@ static void print_apic_synth (code_stash_t*  stash)
                                      / core_count);
          unsigned int  cu_count   = 1;
          if (GET_CoresPerComputeUnit_AMD(stash->val_8000001e_ebx) != 0) {
-            unsigned int cores_per_cu
-               = GET_CoresPerComputeUnit_AMD(stash->val_8000001e_ebx) + 1;
-            cu_count   = (core_count / cores_per_cu);
-            core_count = cores_per_cu;
+            if (Synth_Family(stash->val_80000001_eax) > 0x16) {
+               unsigned int threads_per_core
+                  = GET_CoresPerComputeUnit_AMD(stash->val_8000001e_ebx) + 1;
+               smt_count = threads_per_core;
+               core_count /= threads_per_core;
+            } else {
+               unsigned int cores_per_cu
+                  = GET_CoresPerComputeUnit_AMD(stash->val_8000001e_ebx) + 1;
+               cu_count   = (core_count / cores_per_cu);
+               core_count = cores_per_cu;
+            }
          }
          smt_width  = bits_needed(smt_count);
          core_width = bits_needed(core_count);
@@ -4569,13 +4615,10 @@ print_1_eax(unsigned int  value,
    print_names(value, names, LENGTH(names),
                /* max_len => */ 15);
 
-   unsigned int  synth_family = (BIT_EXTRACT_LE(value, 20, 28)
-                                 + BIT_EXTRACT_LE(value, 8, 12));
-   unsigned int  synth_model  = ((BIT_EXTRACT_LE(value, 16, 20) << 4)
-                                 + BIT_EXTRACT_LE(value, 4, 8));
+   unsigned int  synth_family = Synth_Family(value);
+   unsigned int  synth_model  = Synth_Model(value);
    printf("      (family synth)  = 0x%x (%u)\n", synth_family, synth_family);
    printf("      (model synth)   = 0x%x (%u)\n", synth_model, synth_model);
-          
 
    print_synth_simple(value, vendor);
 }
@@ -4982,7 +5025,7 @@ print_4_synth(const unsigned int  words[])
    unsigned int  sets       = words[WORD_ECX] + 1;
    unsigned int  size       = (ways_assoc * parts * line_size * sets);
    
-   printf("      (synth size)                         = %u", size);
+   printf("      (size synth)                         = %u", size);
    if (size > 1048576) {
       if ((size % 1048576) == 0) {
          printf(" (%u MB)", size / 1048576);
@@ -5134,10 +5177,10 @@ print_7_0_ebx(unsigned int  value)
           { "enhanced REP MOVSB/STOSB"                ,  9,  9, bools },
           { "INVPCID instruction"                     , 10, 10, bools },
           { "RTM: restricted transactional memory"    , 11, 11, bools },
-          { "RDT-M: Intel RDT monitoring"             , 12, 12, bools },
+          { "RDT-CMT/PQoS cache monitoring"           , 12, 12, bools },
           { "deprecated FPU CS/DS"                    , 13, 13, bools },
           { "MPX: intel memory protection extensions" , 14, 14, bools },
-          { "RDT-A: Intel RDT allocation"             , 15, 15, bools },
+          { "RDT-CAT/PQE cache allocation"            , 15, 15, bools },
           { "AVX512F: AVX-512 foundation instructions", 16, 16, bools },
           { "AVX512DQ: double & quadword instructions", 17, 17, bools },
           { "RDSEED instruction"                      , 18, 18, bools },
@@ -5170,12 +5213,12 @@ print_7_0_ecx(unsigned int  value)
           { "PKU protection keys for user-mode"       ,  3,  3, bools },
           { "OSPKE CR4.PKE and RDPKRU/WRPKRU"         ,  4,  4, bools },
           { "WAITPKG instructions"                    ,  5,  5, bools },
-          { "AVX512_VBMI2"                            ,  6,  6, bools },
+          { "AVX512_VBMI2: byte VPCOMPRESS, VPEXPAND" ,  6,  6, bools },
           { "CET_SS: CET shadow stack"                ,  7,  7, bools },
           { "GFNI: Galois Field New Instructions"     ,  8,  8, bools },
           { "VAES instructions"                       ,  9,  9, bools },
           { "VPCLMULQDQ instruction"                  , 10, 10, bools },
-          { "AVX512_VNNI"                             , 11, 11, bools },
+          { "AVX512_VNNI: neural network instructions", 11, 11, bools },
           { "AVX512_BITALG: bit count/shiffle"        , 12, 12, bools },
           { "TME: Total Memory Encryption"            , 13, 13, bools }, // LX*
           { "AVX512: VPOPCNTDQ instruction"           , 14, 14, bools },
@@ -5201,6 +5244,7 @@ print_7_0_edx(unsigned int  value)
           { "AVX512_4FMAPS: multiply acc single prec" ,  3,  3, bools },
           { "fast short REP MOV"                      ,  4,  4, bools },
           { "AVX512_VP2INTERSECT: intersect mask regs",  8,  8, bools },
+          { "VERW md-clear microcode support"         , 10, 10, bools }, // Xen*/Qemu*
           { "hybrid part"                             , 15, 15, bools },
           { "PCONFIG instruction"                     , 18, 18, bools },
           { "CET_IBT: CET indirect branch tracking"   , 20, 20, bools },
@@ -5219,7 +5263,7 @@ static void
 print_7_1_eax(unsigned int  value)
 {
    static named_item  names[]
-      = { { "AVX512_BF16: BFLOAT16 instruction"       ,  5,  5, bools },
+      = { { "AVX512_BF16: bfloat16 instructions"      ,  5,  5, bools },
       };
    print_names(value, names, LENGTH(names),
                /* max_len => */ 40);
@@ -5821,7 +5865,7 @@ print_40000001_eax_kvm(unsigned int  value)
       = { { "kvmclock available at MSR 0x11"          ,  0,  0, bools },
           { "delays unnecessary for PIO ops"          ,  1,  1, bools },
           { "mmu_op"                                  ,  2,  2, bools },
-          { "kvmclock available a MSR 0x4b564d00"     ,  3,  3, bools },
+          { "kvmclock available at MSR 0x4b564d00"    ,  3,  3, bools },
           { "async pf enable available by MSR"        ,  4,  4, bools },
           { "steal clock supported"                   ,  5,  5, bools },
           { "guest EOI optimization enabled"          ,  6,  6, bools },
@@ -5829,6 +5873,8 @@ print_40000001_eax_kvm(unsigned int  value)
           { "guest TLB flush optimization enabled"    ,  9,  9, bools },
           { "async PF VM exit enable available by MSR", 10, 10, bools },
           { "guest send IPI optimization enabled"     , 11, 11, bools },
+          { "host HLT poll disable at MSR 0x4b564d05" , 12, 12, bools },
+          { "guest sched yield optimization enabled"  , 13, 13, bools },
           { "stable: no guest per-cpu warps expected" , 24, 24, bools },
         };
 
@@ -6135,7 +6181,12 @@ print_80000001_eax_amd(unsigned int  value)
 
    printf("   extended processor signature (0x80000001/eax):\n");
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 15);
+
+   unsigned int  synth_family = Synth_Family(value);
+   unsigned int  synth_model  = Synth_Model(value);
+   printf("      (family synth)  = 0x%x (%u)\n", synth_family, synth_family);
+   printf("      (model synth)   = 0x%x (%u)\n", synth_model, synth_model);
 
    print_x_synth_amd(value);
 }
@@ -6153,7 +6204,12 @@ print_80000001_eax_hygon(unsigned int  value)
 
    printf("   extended processor signature (0x80000001/eax):\n");
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 15);
+
+   unsigned int  synth_family = Synth_Family(value);
+   unsigned int  synth_model  = Synth_Model(value);
+   printf("      (family synth)  = 0x%x (%u)\n", synth_family, synth_family);
+   printf("      (model synth)   = 0x%x (%u)\n", synth_model, synth_model);
 
    print_x_synth_hygon(value);
 }
@@ -6428,15 +6484,16 @@ print_80000001_ecx_amd(unsigned int  value)
           { "lightweight profiling support"           , 15, 15, bools },
           { "4-operand FMA instruction"               , 16, 16, bools },
           { "TCE: translation cache extension"        , 17, 17, bools },
-          { "NodeId MSR C001100C"                     , 19, 19, bools },
+          { "NodeId MSR C001100C"                     , 19, 19, bools }, // LX*
           { "TBM support"                             , 21, 21, bools },
           { "topology extensions"                     , 22, 22, bools },
           { "core performance counter extensions"     , 23, 23, bools },
-          { "NB performance counter extensions"       , 24, 24, bools },
+          { "NB/DF performance counter extensions"    , 24, 24, bools }, // LX*/SKC*
           { "data breakpoint extension"               , 26, 26, bools },
           { "performance time-stamp counter support"  , 27, 27, bools },
-          { "performance counter extensions"          , 28, 28, bools },
+          { "LLC performance counter extensions"      , 28, 28, bools },
           { "MWAITX/MONITORX supported"               , 29, 29, bools },
+          { "Address mask extension support"          , 30, 30, bools }, // SKC*
         };
 
    print_names(value, names, LENGTH(names),
@@ -6898,11 +6955,14 @@ print_80000008_ebx(unsigned int  value)
       = { { "CLZERO instruction"                      ,  0,  0, bools },
           { "instructions retired count support"      ,  1,  1, bools },
           { "always save/restore error pointers"      ,  2,  2, bools },
+          { "RDPRU instruction"                       ,  4,  4, bools },
+          { "memory bandwidth enforcement"            ,  6,  6, bools }, // SKC*
           { "WBNOINVD instruction"                    ,  9,  9, bools },
           { "IBPB: indirect branch prediction barrier", 12, 12, bools },
           { "IBRS: indirect branch restr speculation" , 14, 14, bools },
           { "STIBP: 1 thr indirect branch predictor"  , 15, 15, bools },
           { "STIBP always on preferred mode"          , 17, 17, bools }, // LX*
+          { "ppin processor id number supported"      , 23, 23, bools }, // Xen*
           { "SSBD: speculative store bypass disable"  , 24, 24, bools },
           { "virtualized SSBD"                        , 25, 25, bools },
           { "SSBD fixed in hardware"                  , 26, 26, bools },
@@ -6917,15 +6977,27 @@ static void
 print_80000008_ecx(unsigned int  value)
 {
    static named_item  names[]
-      = { { "number of CPU cores - 1"                 ,  0,  7, NIL_IMAGES },
+      = { // bit field 0, 7 is reported by caller
           { "ApicIdCoreIdSize"                        , 12, 15, NIL_IMAGES },
+          { "performance time-stamp counter size"     , 16, 17, NIL_IMAGES },
         };
 
-   printf("   Logical CPU cores (0x80000008/ecx):\n");
    print_names(value, names, LENGTH(names),
                /* max_len => */ 0);
 }
 
+static void
+print_80000008_edx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "RDPRU instruction max input support"     , 16, 23, NIL_IMAGES }, // SKC*
+        };
+ 
+   printf("   Feature Extended Size (0x80000008/edx):\n");
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 0);
+}
+ 
 static void
 print_8000000a_eax(unsigned int  value)
 {
@@ -6956,6 +7028,8 @@ print_8000000a_edx(unsigned int  value)
           { "AVIC: AMD virtual interrupt controller"  , 13, 13, bools },
           { "virtualized VMLOAD/VMSAVE"               , 15, 15, bools },
           { "virtualized global interrupt flag (GIF)" , 16, 16, bools },
+          { "GMET: guest mode execute trap"           , 17, 17, bools },
+          { "guest Spec_ctl support"                  , 20, 20, bools },
         };
 
    printf("   SVM Secure Virtual Machine (0x8000000a/edx):\n");
@@ -7183,30 +7257,40 @@ print_8000001d_synth(const unsigned int  words[])
 }
 
 static void
-print_8000001e_ebx(unsigned int  value)
+print_8000001e_ebx_f16(unsigned int  value)
 {
    static named_item  names[]
       = { { "compute unit ID"                         ,  0,  7, NIL_IMAGES },
           { "cores per compute unit - 1"              ,  8,  9, NIL_IMAGES },
         };
 
-   printf("   Extended APIC ID (0x8000001e/ebx):\n");
+   printf("   Compute Unit Identifiers (0x8000001e/ebx):\n");
    print_names(value, names, LENGTH(names),
                /* max_len => */ 0);
 }
 
 static void
-print_8000001e_ecx(unsigned int  value)
+print_8000001e_ebx_gt_f16(unsigned int  value)
 {
-   static ccstring  npp[1<<2] = { "1 node (0)",
-                                  "2 nodes (1)" };
-
    static named_item  names[]
-      = { { "node ID"                                 ,  0,  7, NIL_IMAGES },
-          { "nodes per processor"                     ,  8,  9, npp },
+      = { { "core ID"                                 ,  0,  7, NIL_IMAGES },
+          { "threads per core - 1"                    ,  8, 15, NIL_IMAGES },
         };
 
-   printf("   Extended APIC ID (0x8000001e/ecx):\n");
+   printf("   Core Identifiers (0x8000001e/ebx):\n");
+   print_names(value, names, LENGTH(names),
+                /* max_len => */ 0);
+}
+
+static void
+print_8000001e_ecx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "node ID"                                 ,  0,  7, NIL_IMAGES },
+          { "nodes per processor - 1"                 ,  8, 10, NIL_IMAGES },
+        };
+
+   printf("   Node Identifiers (0x8000001e/ecx):\n");
    print_names(value, names, LENGTH(names),
                /* max_len => */ 0);
 }
@@ -7214,27 +7298,44 @@ print_8000001e_ecx(unsigned int  value)
 static void
 print_8000001f_eax(unsigned int  value)
 {
-   // This is undocumented as of 17-May-2018, so names are tentative.
    static named_item  names[]
       = { { "SME: secure memory encryption support"   ,  0,  0, bools },
           { "SEV: secure encrypted virtualize support",  1,  1, bools },
+          { "VM page flush MSR support"               ,  2,  2, bools },
+          { "SEV-ES: SEV encrypted state support"     ,  3,  3, bools },
         };
 
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 40);
+}
+
+static void
+print_8000001f_ebx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "encryption bit position in PTE"          ,  0,  5, NIL_IMAGES },
+          { "physical address space width reduction"  ,  6, 11, NIL_IMAGES },
+        };
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 40);
+}
+ 
+static void
+print_80000020_0_ebx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "memory bandwidth enforcement support"    ,  1,  1, bools },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 36);
 }
 
 static void
 print_80860001_eax(unsigned int  value)
 {
-   static ccstring  family[1<<4] = { NULL,
-                                     NULL,
-                                     NULL,
-                                     NULL,
-                                     NULL,
-                                     "Transmeta Crusoe" };
    static named_item  names[]
-      = { { "generation"                              ,  8, 11, family },
+      = { { "generation"                              ,  8, 11, NIL_IMAGES },
           { "model"                                   ,  4,  7, NIL_IMAGES },
           { "stepping"                                ,  0,  3, NIL_IMAGES },
         };
@@ -7339,20 +7440,20 @@ static void
 print_c0000001_edx(unsigned int  value)
 {
    static named_item  names[]
-      = { { "alternate instruction set"                ,  0,  0, bools },
-          { "alternate instruction set enabled"        ,  1,  1, bools },
-          { "random number generator"                  ,  2,  2, bools },
-          { "random number generator enabled"          ,  3,  3, bools },
-          { "LongHaul MSR 0000_110Ah"                  ,  4,  4, bools },
-          { "FEMMS"                                    ,  5,  5, bools },
-          { "advanced cryptography engine (ACE)"       ,  6,  6, bools },
-          { "advanced cryptography engine (ACE)enabled",  7,  7, bools },
-          { "montgomery multiplier/hash (ACE2)"        ,  8,  8, bools },
-          { "montgomery multiplier/hash (ACE2) enabled",  9,  9, bools },
-          { "padlock hash engine (PHE)"                , 10, 10, bools },
-          { "padlock hash engine (PHE) enabled"        , 11, 11, bools },
-          { "padlock montgomery mult. (PMM)"           , 12, 12, bools },
-          { "padlock montgomery mult. (PMM) enabled"   , 13, 13, bools },
+      = { { "alternate instruction set"                ,  0,  0, bools }, // sandpile.org
+          { "alternate instruction set enabled"        ,  1,  1, bools }, // sandpile.org
+          { "random number generator"                  ,  2,  2, bools }, // LX*
+          { "random number generator enabled"          ,  3,  3, bools }, // LX*
+          { "LongHaul MSR 0000_110Ah"                  ,  4,  4, bools }, // sandpile.org
+          { "FEMMS"                                    ,  5,  5, bools }, // sandpile.org
+          { "advanced cryptography engine (ACE)"       ,  6,  6, bools }, // LX*
+          { "advanced cryptography engine (ACE)enabled",  7,  7, bools }, // LX*
+          { "montgomery multiplier/hash (ACE2)"        ,  8,  8, bools }, // LX*
+          { "montgomery multiplier/hash (ACE2) enabled",  9,  9, bools }, // LX*
+          { "padlock hash engine (PHE)"                , 10, 10, bools }, // LX*
+          { "padlock hash engine (PHE) enabled"        , 11, 11, bools }, // LX*
+          { "padlock montgomery mult. (PMM)"           , 12, 12, bools }, // LX*
+          { "padlock montgomery mult. (PMM) enabled"   , 13, 13, bools }, // LX*
         };
 
    printf("   extended feature flags (0xc0000001/edx):\n");
@@ -7364,7 +7465,6 @@ static void
 print_c0000002_eax(unsigned int  value)
 {
    // This information is from Juerg Haefliger.
-   // TODO: figure out how to decode the rest of this
    static named_item  names[]
       = { { "core temperature (degrees C)"       ,  8, 15, NIL_IMAGES },
         };
@@ -7377,7 +7477,6 @@ static void
 print_c0000002_ebx(unsigned int  value)
 {
    // This information is from Juerg Haefliger.
-   // TODO: figure out how to decode the rest of this
    printf("      input voltage (mV)           = %d (0x%0x)\n",
           (BIT_EXTRACT_LE(value, 0, 8) << 4) + 700,
           BIT_EXTRACT_LE(value, 0, 8));
@@ -7985,7 +8084,18 @@ print_reg (unsigned int        reg,
    } else if (reg == 0x80000008) {
       print_80000008_eax(words[WORD_EAX]);
       print_80000008_ebx(words[WORD_EBX]);
+      printf("   Size Identifiers (0x80000008/ecx):\n");
+      if (Synth_Family(stash->val_80000001_eax) > 0x16) {
+         printf("      number of threads - 1               = 0x%x (%u)\n",
+                BIT_EXTRACT_LE(stash->val_80000008_ecx,  0,  8),
+                BIT_EXTRACT_LE(stash->val_80000008_ecx,  0,  8));
+      } else {
+         printf("      number of CPU cores - 1             = 0x%x (%u)\n",
+                BIT_EXTRACT_LE(stash->val_80000008_ecx,  0,  8),
+                BIT_EXTRACT_LE(stash->val_80000008_ecx,  0,  8));
+      }
       print_80000008_ecx(words[WORD_ECX]);
+      print_80000008_edx(words[WORD_EDX]);
    } else if (reg == 0x80000009) {
       /* reserved for Intel feature flag expansion */
    } else if (reg == 0x8000000a) {
@@ -8015,16 +8125,32 @@ print_reg (unsigned int        reg,
       print_8000001d_synth(words);
    } else if (reg == 0x8000001e) {
       printf("   extended APIC ID = %u\n", words[WORD_EAX]);
-      print_8000001e_ebx(words[WORD_EBX]);
+      if (Synth_Family(stash->val_80000001_eax) > 0x16) {
+         print_8000001e_ebx_gt_f16(words[WORD_EBX]);
+      } else {
+         print_8000001e_ebx_f16(words[WORD_EBX]);
+      }
       print_8000001e_ecx(words[WORD_ECX]);
    } else if (reg == 0x8000001f) {
-      // This is undocumented as of 17-May-2018, so names are tentative.
-      printf("   SME/SEV (0x8000001f):\n");
+      printf("   AMD Secure Encryption (0x8000001f):\n");
       print_8000001f_eax(words[WORD_EAX]);
-      printf("      MIN_SEV_ASID = 0x%0x (%u)\n",
-             words[WORD_EDX], words[WORD_EDX]);
-      printf("      MAX_SEV_ASID = 0x%0x (%u)\n",
+      print_8000001f_ebx(words[WORD_EBX]);
+      printf("      number of SEV-enabled guests supported   = 0x%0x (%u)\n",
              words[WORD_ECX], words[WORD_ECX]);
+      printf("      minimum SEV guest ASID                   = 0x%0x (%u)\n",
+             words[WORD_EDX], words[WORD_EDX]);
+   } else if (reg == 0x80000020) {
+      if (try == 0) {
+         printf("   PQoS Enforcement for Memory Bandwidth (0x80000020):\n");
+         print_80000020_0_ebx(words[WORD_EBX]);
+      } else if (try == 1) {
+         printf("      capacity bitmask length - 1          = 0x%0x (%u)\n",
+                words[WORD_EAX], words[WORD_EAX]);
+         printf("      number of classes of service         = 0x%0x (%u)\n",
+                words[WORD_EDX], words[WORD_EDX]);
+      } else {
+         print_reg_raw(reg, try, words);
+      }
    } else if (reg == 0x80860000) {
       // max already set to words[WORD_EAX]
    } else if (reg == 0x80860001) {
@@ -8616,6 +8742,16 @@ do_real(boolean  one_cpu,
          if (reg == 0x8000001d) {
             unsigned int  try = 0;
             while ((words[WORD_EAX] & 0x1f) != 0) {
+               print_header(reg, try, raw);
+               print_reg(reg, words, raw, try, &stash);
+               try++;
+               real_get(cpuid_fd, reg, words, try, FALSE);
+            }
+         } else if (reg == 0x80000020) {
+            // Rules for loop termination from SKC*.
+            unsigned int  try = 0;
+            while (words[WORD_EAX] != 0 || words[WORD_EBX] != 0 ||
+                   words[WORD_ECX] != 0 || words[WORD_EDX] != 0) {
                print_header(reg, try, raw);
                print_reg(reg, words, raw, try, &stash);
                try++;

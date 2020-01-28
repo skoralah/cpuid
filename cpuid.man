@@ -1,7 +1,7 @@
 .\"
-.\" $Id: cpuid.man,v 20200122 2020/01/22 10:09:08 todd $
+.\" $Id: cpuid.man,v 20200127 2020/01/27 18:40:28 todd $
 .\"
-.TH CPUID 1 "22 Jan 2020" "20200122"
+.TH CPUID 1 "27 Jan 2020" "20200127"
 .SH NAME 
 cpuid \- Dump CPUID information for each CPU
 .SH SYNOPSIS
@@ -546,8 +546,8 @@ Processors
 .br
 53072: Revision Guide for AMD Family 16h Models 30h-3Fh Processors
 .br
-54945: Processor Programming Reference (PPR) for AMD Family 17h Model 01h,
-Revision B1 Processors
+54945: Processor Programming Reference (PPR) for AMD Family 17h Models 01h,0h,
+Revision B2 Processors
 .br
 54945: Processor Programming Reference (PPR) for AMD Family 17h Models 01h,08h
 Revision B2 Processors
@@ -560,6 +560,9 @@ Revision B2 Processors
 Revision B1 Processors
 .br
 55766: Secure Encrypted Virtualization API Version 0.16 Technical Preview
+.br
+55803: Preliminary Processor Programming Reference (PPR) for AMD Family 17h
+Model 31h, Revision B0 Processors
 .br
 56176: Processor Programming Reference (PPR) for AMD Family 17h Model 71h,
 Revision B0 Processors
@@ -599,7 +602,7 @@ following documents from Microsoft:
 Also, information is available from the following web sites:
 
 .RS
-<http://www.sandpile.org/ia32/cpuid.htm>
+<http://www.sandpile.org/x86/cpuid.htm>
 .br
 <http://en.wikipedia.org/wiki/List_of_Intel_CPU_microarchitectures>
 .br

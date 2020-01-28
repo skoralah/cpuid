@@ -1,3 +1,74 @@
+Mon Jan 27 2020 Todd Allen <todd.allen@etallen.com>
+	* Made new release.
+
+Mon Jan 27 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Changed 0x8000001e/ecx to display nodes per processor in N-1
+	  notation, after receiving confirmation from AMD that this is correct.
+
+Sat Jan 25 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Fixed spelling of (size synth).  I meant to always have
+	  "synth" at the end of synthesized fields, and had that one flipped
+	  around.
+	* cpuid.c: Clarified AVX512_VNNI: neural network instructions.
+	* cpuid.c: Clarified AVX512_VBMI2: byte VPCOMPRESS, VPEXPAND.
+	* cpuid.c: Clarified AVX512_BF16: bfloat16 is a data format, not an
+	  instruction.
+	* cpuid.c: Added 7/0/edx md-clear feature, found from Xen & Qemu
+	  hypervisors.
+	* cpuid.c: Added 0x80000008/ebx ppin feature, found from Xen hypervisor.
+	* cpuid.c: Added 0x40000001/eax (KVM) flags.
+	* cpuid.c: Got rid of the Transmeta 0x80860001/eax family description,
+	  which I missed when I got rid of all 1/eax families.  It wasn't so
+	  egregious, but it wasn't very valuable either.  The Transmeta Crusoe
+	  name already was in the (synth) leaf.
+	* cpuid.c: Wrote a version of bits_needed() that uses __builtin_clz
+	  with gcc 3.4 and later.
+	* cpuid.c: Fixed bug with old asm-based bits_needed() function when the
+	  input value was 0.
+
+Sat Jan 25 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Further clarified descriptions in 0x8000001f leaf, based on
+	  text in AMD64 Architecture Programmer's Manual, Vol 3, 3.28.  I had
+	  missed these new fields in my earlier pass through the manual.
+	* cpuid.c: Added comments for more undocumented fields, noting where
+	  the information came from, particularly SKC*, LX*, and sandpile.org.
+	* cpuid.c: Changed case of new descriptions.
+	* cpuid.c: Created Synth_Family() & Synth_Model() macros based on
+	  print_1_eax & SKC's AMD_Family() macro.
+	* cpuid.c: Added (family synth) and (model synth) to 0x80000001/eax,
+	  (AMD and Hygon variants), just like for 1/eax.
+	* cpuid.c: Added Castle Peak B0 stepping (synth), now that I know the
+	  stepping name.
+	* cpuid.c: Changed 0x80000008/ebx "RDPRU instruction" field.
+	* cpuid.c: Clarified 0x80000020 leaf descriptions based on AMD 55803 PPR.
+	* cpuid.c: Modified print_apic_synth's bit width computations to reflect
+	  change in terminology (core => thread, CU => core) in AMD Family 17h.
+	* cpuid.man: Updated 54945 PPR name, using newer doc from
+	  developer.amd.com.
+	* cpuid.man: Added 55803 PPR, found by URL provided by AMD.
+	* cpuid.man: Updated sandpile.org URL.
+
+Sat Jan 25 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Selectively applied changes from Smita Koralahalli
+	  Channabasappa's patch: "Add PQoS feature to CPUID utility and display
+	  subleaf 1 for leaf 0x80000020 in the raw CPUID data."
+	* cpuid.c: Renamed fields which no longer are Intel-specific:
+	  RDT-CMT/PQoS cache monitoring and RDT-CAT/PQE cache allocation.
+
+Fri Jan 24 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Shortened 0x8000001f leaf descriptions to <= 40 chars.
+
+Fri Jan 24 2020 Smita Koralahalli Channabasappa <Smita.KoralahalliChannabasappa@amd.com>
+	* cpuid.c: Add AMD Secure Encryption feature bits to CPUID utility.
+	* cpuid.c: Update CPUID utility with additional AMD specific features.
+	* cpuid.c: Handle naming issues of cores->threads at register
+	  80000008_ecx and compute unit->core at register 8000001e_ebx for
+	  families greater than 16h.  Retains previously assigned names if
+	  families are lesser than or equal to 16h.  Family values are
+	  determined by adding family number and extended family
+	  number(80000001_eax[8:11] + 80000001_eax[20:27]) as described in PPR
+	  under CPUID_Fn00000001_eax.
+
 Wed Jan 22 2020 Todd Allen <todd.allen@etallen.com>
 	* Made new release.
 
