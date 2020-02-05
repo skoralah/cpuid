@@ -25,10 +25,26 @@
 // but in version 071US, was in "Volume 4: Model-Specific Registers", Table 2-1:
 // "CPUID Signature Values of DisplayFamily_DisplayModel".
 
+// MRG* is a table that forms the bulk of Intel Microcode Revision Guidance (or
+// Microcode Update Guidance).  Its purpose is not to list CPUID values, but
+// it does so, and sometimes lists values that appear nowhere else.
+
 // LX* indicates features that I have seen no documentation for, but which are
 // used by the Linux kernel (which is good evidence that they're correct).
-// The "hook" to find these generally is a X86_FEATURE_* flag in:
+// The "hook" to find these generally is an X86_FEATURE_* flag in:
 //    arch/x86/include/asm/cpufeatures.h
+// For (synth) and (uarch synth) decoding, it often indicates
+// family/model/stepping value which are documented nowhere else.  These usually
+// can be found in:
+//    arch/x86/include/asm/intel-family.h
+
+// Coreboot* indicates (synth) or (uarch synth) decoding for which I have seen
+// no documentation, but which is used by coreboot, BIOS replacement software.
+// The core information is in:
+//    src/soc/intel/common/block/include/intelblocks/mp_init.h
+//    src/soc/intel/*/include/soc/cpu.h
+// And strings, for the less obvious cases, are in:
+//    src/soc/intel/*/bootblock/report_platform.c
 
 // Xen* indicates features that I have seen no documentation for, but which are
 // used by the Xen hypervisor.  They are listed in:
@@ -336,6 +352,7 @@ typedef struct {
          boolean    celeron;
          boolean    core;
          boolean    pentium;
+         boolean    atom;
          boolean    xeon_mp;
          boolean    xeon;
          boolean    pentium_m;
@@ -345,6 +362,8 @@ typedef struct {
          boolean    scalable;
          boolean    u_line;
          boolean    y_line;
+         boolean    g_line;
+         boolean    i_8000;
          boolean    i_10000;
       };
       struct /* AMD */ {
@@ -374,12 +393,16 @@ typedef struct {
          boolean    t_suffix;
          boolean    ryzen;
          boolean    epyc;
+         boolean    epyc_3000;
 
          boolean    embedded;
          int        cores;
       };
       struct /* Cyrix */ {
          boolean    mediagx;
+      };
+      struct /* VIA */ {
+         boolean    zhaoxin;
       };
    } br;
    struct bri {
@@ -426,12 +449,14 @@ typedef struct {
                     { NULL, -1, -1 }, \
                     { FALSE, \
                       { FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
-                        FALSE, FALSE, FALSE, FALSE, FALSE, FALSE }, \
+                        FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
+                        FALSE, FALSE },                                   \
                       { FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
                         FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
                         FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
-                        FALSE, FALSE, FALSE, FALSE, FALSE, \
+                        FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
                         FALSE, 0 }, \
+                      { FALSE }, \
                       { FALSE } }, \
                     { FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE }, \
                     FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
@@ -1485,6 +1510,7 @@ decode_brand_string(const char*    brand,
    stash->br.celeron     = strstr(brand, "Celeron") != NULL;
    stash->br.core        = strstr(brand, "Core(TM)") != NULL;
    stash->br.pentium     = strstr(brand, "Pentium") != NULL;
+   stash->br.atom        = strstr(brand, "Atom") != NULL;
    stash->br.xeon_mp     = (strstr(brand, "Xeon MP") != NULL
                             || strstr(brand, "Xeon(TM) MP") != NULL
                             || strstr(brand, "Xeon(R)") != NULL);
@@ -1498,8 +1524,13 @@ decode_brand_string(const char*    brand,
                             || strstr(brand, "Gold") != NULL
                             || strstr(brand, "Platinum") != NULL);
    stash->br.u_line      = (strregexp(brand, "Core.* [im][3579]-[0-9]*U")
-                            || strregexp(brand, "Pentium.* [0-9]*U"));
-   stash->br.y_line      = strregexp(brand, "Core.* [im][3579]-[0-9]*Y");
+                            || strregexp(brand, "Pentium.* [0-9]*U")
+                            || strregexp(brand, "Celeron.* [0-9]*U"));
+   stash->br.y_line      = (strregexp(brand, "Core.* [im][3579]-[0-9]*Y")
+                            || strregexp(brand, "Pentium.* [0-9]*Y")
+                            || strregexp(brand, "Celeron.* [0-9]*Y"));
+   stash->br.g_line      = strregexp(brand, "Core.* [im][3579]-[0-9]*G");
+   stash->br.i_8000      = strregexp(brand, "Core.* [im][3579]-8[0-9][0-9][0-9]");
    stash->br.i_10000     = strregexp(brand, "Core.* i[3579]-10[0-9][0-9][0-9]");
 
    stash->br.athlon_lv   = strstr(brand, "Athlon(tm) XP-M (LV)") != NULL;
@@ -1510,7 +1541,8 @@ decode_brand_string(const char*    brand,
    stash->br.sempron     = strstr(brand, "Sempron") != NULL;
    stash->br.phenom      = strstr(brand, "Phenom") != NULL;
    stash->br.series      = strstr(brand, "Series") != NULL;
-   stash->br.a_series    = strstr(brand, "AMD A") != NULL;
+   stash->br.a_series    = (strstr(brand, "AMD A") != NULL
+                            || strstr(brand, "AMD PRO A") != NULL);
    stash->br.c_series    = strstr(brand, "AMD C") != NULL;
    stash->br.e_series    = strstr(brand, "AMD E") != NULL;
    stash->br.g_series    = strstr(brand, "AMD G") != NULL;
@@ -1529,6 +1561,7 @@ decode_brand_string(const char*    brand,
    stash->br.t_suffix    = strregexp(brand, "[0-9][0-9][0-9][0-9]T");
    stash->br.ryzen       = strstr(brand, "Ryzen") != NULL;
    stash->br.epyc        = strstr(brand, "EPYC") != NULL;
+   stash->br.epyc_3000   = strregexp(brand, "EPYC 3[0-9][0-9][0-9]");
 
    stash->br.embedded    = strstr(brand, "Embedded") != NULL;
    if (strstr(brand, "Dual Core") != NULL
@@ -1548,6 +1581,8 @@ decode_brand_string(const char*    brand,
    }
 
    stash->br.mediagx     = strstr(brand, "MediaGXtm") != NULL;
+
+   stash->br.zhaoxin     = strstr(brand, "ZHAOXIN") != NULL;
 }
 
 static void
@@ -1568,6 +1603,7 @@ decode_brand_stash(code_stash_t*  stash)
 #define is_intel      (stash->vendor == VENDOR_INTEL)
 #define is_amd        (stash->vendor == VENDOR_AMD)
 #define is_cyrix      (stash->vendor == VENDOR_CYRIX)
+#define is_via        (stash->vendor == VENDOR_VIA)
 #define is_transmeta  (stash->vendor == VENDOR_TRANSMETA)
 #define is_mobile     (stash->br.mobile)
 
@@ -1580,20 +1616,29 @@ decode_brand_stash(code_stash_t*  stash)
 ** X? = think "Extreme Edition"
 ** L? = think "Line"
 **
+** ?G = think generic CPU
 ** ?P = think Pentium
 ** ?C = think Celeron
+** ?a = think Atom
 ** ?X = think Xeon
 ** ?M = think Xeon MP / Pentium M
-** ?c = think Core (or generic CPU)
+** ?c = think Core
 ** ?d = think Pentium D
 ** ?S = think Scalable (Bronze/Silver/Gold/Platinum)
 */
+#define dG (is_intel && !is_mobile && stash->br.generic)
 #define dP ((is_intel && stash->br.pentium) \
             || stash->bri.desktop_pentium)
 #define dC ((is_intel && !is_mobile && stash->br.celeron) \
             || stash->bri.desktop_celeron)
+#define da (is_intel && stash->br.atom) 
 #define dd (is_intel && stash->br.pentium_d)
+#define TODD_WAS_HERE
+#ifdef TODD_WAS_HERE
+#define dc (is_intel && !is_mobile && stash->br.core)
+#else
 #define dc (is_intel && !is_mobile && (stash->br.core || stash->br.generic))
+#endif
 #define sX ((is_intel && stash->br.xeon) || stash->bri.xeon)
 #define sM ((is_intel && stash->br.xeon_mp) \
             || stash->bri.xeon_mp)
@@ -1608,6 +1653,11 @@ decode_brand_stash(code_stash_t*  stash)
 #define Xc (is_intel && stash->br.extreme)
 #define LU (is_intel && stash->br.u_line)
 #define LY (is_intel && stash->br.y_line)
+#define LG (is_intel && stash->br.g_line)
+#define UC (dC && stash->br.u_line)
+#define UP (dP && stash->br.u_line)
+#define YC (dC && stash->br.y_line)
+#define YP (dP && stash->br.y_line)
 
 /* 
 ** Intel special cases 
@@ -1628,14 +1678,14 @@ decode_brand_stash(code_stash_t*  stash)
 /* Potomac, distinguished from Cranford */
 #define sP (sM && stash->L3)
 /* Allendale, distinguished from Conroe */
-#define da (dc && stash->L2_2M)
+#define dL (dc && stash->L2_2M)
 /* Dual-Core Xeon Processor 5100 (Woodcrest B1) pre-production,
    distinguished from Core 2 Duo (Conroe B1) */
-#define QW (dc && stash->br.generic \
+#define QW (dG && stash->br.generic \
             && (stash->mp.cores == 4 \
                 || (stash->mp.cores == 2 && stash->mp.hyperthreads == 2)))
 /* Core Duo (Yonah), distinguished from Core Solo (Yonah) */
-#define Dc (dc && stash->mp.cores == 2)
+#define DG (dG && stash->mp.cores == 2)
 /* Core 2 Quad, distinguished from Core 2 Duo */
 #define Qc (dc && stash->mp.cores == 4)
 /* Core 2 Extreme (Conroe B1), distinguished from Core 2 Duo (Conroe B1) */
@@ -1654,8 +1704,10 @@ decode_brand_stash(code_stash_t*  stash)
 #define Qe (Qc && stash->L2_6M)
 /* Yorkfield E0, distinguished from Yorkfield R0 */
 #define se (sQ && stash->L2_6M)
+/* Amber Lake-Y, distinguished from Kaby Lake-Y */
+#define Y8 (LY && stash->br.i_8000)
 /* Comet Lake V1, distinguished from Whiskey Lake V0 */
-#define UC (LU && stash->br.i_10000)
+#define UX (LU && stash->br.i_10000)
 
 /*
 ** AMD major queries:
@@ -1665,6 +1717,8 @@ decode_brand_stash(code_stash_t*  stash)
 ** M? = think "mobile"
 ** S? = think "Series"
 ** T? = think "Tablet"
+** A? = think "any"
+** E? = think "Embedded"
 **
 ** ?A = think Athlon
 ** ?X = think Athlon XP
@@ -1717,6 +1771,9 @@ decode_brand_stash(code_stash_t*  stash)
 #define Sz (is_amd && !is_mobile && stash->br.z_series)
 #define Ta (is_amd && stash->br.t_suffix && stash->br.a_series)
 #define Te (is_amd && stash->br.t_suffix && stash->br.e_series)
+#define AR (is_amd && stash->br.ryzen)
+#define ER (is_amd && stash->br.ryzen && stash->br.embedded)
+#define EE (is_amd && stash->br.epyc_3000)
 
 /*
 ** AMD special cases
@@ -1815,6 +1872,11 @@ static boolean is_amd_egypt_athens_8xx(const code_stash_t*  stash)
 #define cm (is_cyrix && stash->br.mediagx)
 
 /*
+** VIA major query
+*/
+#define vZ (is_via && stash->br.zhaoxin)
+
+/*
 ** Transmeta major queries
 **
 ** t2 = TMx200
@@ -1890,22 +1952,27 @@ decode_uarch_intel(unsigned int  val,
    boolean*  ciu = &arch->core_is_uarch;
 
    // Intel calls "Whiskey Lake", "Amber Lake", and "Comet Lake" distinct
-   // uarch's optimized from "Coffee Lake".  That just leads to confusion and
-   // long uarch names with lots of slashes.  Their families & models overlap,
-   // and just differ based on brand (based on target market).  This is
-   // analogous to the multitude of core names in pre-Sandy Bridge days.  So I
-   // am treating those 3 as distinct cores within the "Coffee Lake" uarch.
-   // This reduces the number of uarches in the Skylake-based era to:
+   // uarch's optimized from "Kaby Lake".  That just leads to confusion and long
+   // uarch names with slashes.  Their families & models overlap, and just
+   // differ based on brand (based on target market):
+   //    (0,6),(8,14),9  = Kaby Lake      -or- Amber Lake-Y
+   //    (0,6),(8,14),11 = Whiskey Lake-U -or- Amber Lake-Y
+   //    (0,6),(8,14),12 = Whiskey Lake-U -or- Amber Lake-Y -or- Comet Lake-U
+   // If the only way to distinguish two uarch's is by brand, I am skeptical
+   // that they really are distinct uarch's!  This is analogous to the multitude
+   // of core names in pre-Sandy Bridge days.  So I am treating those 3 as
+   // distinct cores within the "Kaby Lake" uarch.  This reduces the number of
+   // uarches in the Skylake-based era to:
    //
    //    [Skylake]         = lead uarch in {Skylake} family
    //       [Cascade Lake] = Skylake + DL Boost + spectre/meltdown fixes
-   //    [Kaby Lake]       = Skylake, 14nm+
+   //    [Kaby Lake]       = Skylake, 14nm+ (includes Whiskey, Amber, Comet)
    //    [Coffee Lake]     = Kaby Lake, 14nm++, 1.5x CPUs/die
    //       [Palm Cove]    = Coffee Lake, 10nm, AVX-512
    //
    // That is a more manageable set.
    //
-   // NOTE: Ice Lake & Tiger Lake are part of the Sunny Cove uarch.
+   // NOTE: Ice Lake & Tiger Lake cores are in the separate Sunny Cove uarch.
 
    START;
    F   (    0, 4,                                                               *f = "i486");          // *p depends on core
@@ -1962,40 +2029,48 @@ decode_uarch_intel(unsigned int  val,
    FM  (    0, 6,  4,10,         *u = "Silvermont",                                                    *p = "22nm"); // no docs, but /proc/cpuinfo seen in wild
    FM  (    0, 6,  4,12,         *u = "Airmont",                                                       *p = "14nm");
    FM  (    0, 6,  4,13,         *u = "Silvermont",                                                    *p = "22nm");
+   FMS (    0, 6,  4,14,  8,     *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm");
    FM  (    0, 6,  4,14,         *u = "Skylake",                   *ciu = TRUE, *f = "Skylake",        *p = "14nm");
    FM  (    0, 6,  4,15,         *u = "Broadwell",                 *ciu = TRUE, *f = "Haswell",        *p = "14nm");
    FMS (    0, 6,  5, 5,  6,     *u = "Cascade Lake",              *ciu = TRUE, *f = "Skylake",        *p = "14nm"); // no docs, but example from Greg Stewart
    FMS (    0, 6,  5, 5,  7,     *u = "Cascade Lake",              *ciu = TRUE, *f = "Skylake",        *p = "14nm");
+   FMS (    0, 6,  5, 5, 10,     *u = "Cooper Lake",               *ciu = TRUE, *f = "Skylake",        *p = "14nm");
    FM  (    0, 6,  5, 5,         *u = "Skylake",                   *ciu = TRUE, *f = "Skylake",        *p = "14nm");
    FM  (    0, 6,  5, 6,         *u = "Broadwell",                 *ciu = TRUE, *f = "Haswell",        *p = "14nm");
-   FM  (    0, 6,  5, 7,         *u = "Knights Landing",                                               *p = "14nm");
+   FM  (    0, 6,  5, 7,         *u = "Knights Landing",           *ciu = TRUE,                        *p = "14nm");
    FM  (    0, 6,  5,10,         *u = "Silvermont",                                                    *p = "22nm"); // no spec update; only MSR_CPUID_table* so far
    FM  (    0, 6,  5,12,         *u = "Goldmont",                                                      *p = "14nm"); // no spec update for Atom; only MSR_CPUID_table* so far
    FM  (    0, 6,  5,13,         *u = "Silvermont",                                                    *p = "22nm"); // no spec update; only MSR_CPUID_table* so far
+   FMS (    0, 6,  5,14,  8,     *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm");
    FM  (    0, 6,  5,14,         *u = "Skylake",                   *ciu = TRUE, *f = "Skylake",        *p = "14nm");
    FM  (    0, 6,  5,15,         *u = "Goldmont",                                                      *p = "14nm");
    FM  (    0, 6,  6, 6,         *u = "Palm Cove",                              *f = "Skylake",        *p = "10nm"); // no spec update; only MSR_CPUID_table* so far
    FM  (    0, 6,  6,10,         *u = "Sunny Cove",                             *f = "Sunny Cove",     *p = "10nm"); // no spec update; only MSR_CPUID_table* so far
    FM  (    0, 6,  6,12,         *u = "Sunny Cove",                             *f = "Sunny Cove",     *p = "10nm"); // no spec update; only MSR_CPUID_table* so far
+   FM  (    0, 6,  7, 5,         *u = "Airmont",                                                       *p = "14nm"); // no spec update; whispers & rumors
    FM  (    0, 6,  7,10,         *u = "Goldmont Plus",                                                 *p = "14nm");
    FM  (    0, 6,  7,13,         *u = "Sunny Cove",                             *f = "Sunny Cove",     *p = "10nm"); // no spec update; only MSR_CPUID_table* so far
    FM  (    0, 6,  7,14,         *u = "Sunny Cove",                             *f = "Sunny Cove",     *p = "10nm");
-   FM  (    0, 6,  8, 5,         *u = "Knights Mill",                                                  *p = "14nm"); // no spec update; only MSR_CPUID_table* so far
+   FM  (    0, 6,  8, 5,         *u = "Knights Mill",              *ciu = TRUE,                        *p = "14nm"); // no spec update; only MSR_CPUID_table* so far
+   FM  (    0, 6,  8, 6,         *u = "Tremont",                                                       *p = "10nm"); // LX*
+   FM  (    0, 6,  8,10,         *u = "Tremont",                                                       *p = "10nm"); // no spec update; only geekbench.com example
    FM  (    0, 6,  8,12,         *u = "Willow Cove",                            *f = "Sunny Cove",     *p = "10nm"); // found only on en.wikichip.org
-   FMS (    0, 6,  8,14,  9,     *u = "Kaby Lake",                 *ciu = TRUE, *f = "Skylake",        *p = "14nm");
-   FMS (    0, 6,  8,14, 10,     *u = "Kaby Lake",                 *ciu = TRUE, *f = "Skylake",        *p = "14nm");
-   FMS (    0, 6,  8,14, 11,     *u = "Coffee Lake",                            *f = "Skylake",        *p = "14nm"); // steppings mentioned on en.wikichip.org
-   FMS (    0, 6,  8,14, 12,     *u = "Coffee Lake",                            *f = "Skylake",        *p = "14nm");
-   FM  (    0, 6,  8,14,         *u = "Kaby Lake / Coffee Lake",                *f = "Skylake",        *p = "14nm");
-   FMS (    0, 6,  9,14,  9,     *u = "Kaby Lake",                 *ciu = TRUE, *f = "Skylake",        *p = "14nm");
-   FMS (    0, 6,  9,14, 10,     *u = "Coffee Lake",                            *f = "Skylake",        *p = "14nm");
-   FMS (    0, 6,  9,14, 11,     *u = "Coffee Lake",                            *f = "Skylake",        *p = "14nm");
-   FMS (    0, 6,  9,14, 12,     *u = "Coffee Lake",                            *f = "Skylake",        *p = "14nm");
+   FM  (    0, 6,  8,13,         *u = "Willow Cove",                            *f = "Sunny Cove",     *p = "10nm"); // LX*
+   FM  (    0, 6,  8,14,         *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm");
+   FM  (    0, 6,  9, 6,         *u = "Tremont",                                                       *p = "10nm"); // LX*
+   FM  (    0, 6,  9,12,         *u = "Tremont",                                                       *p = "10nm"); // LX*
+   FM  (    0, 6,  9,13,         *u = "Sunny Cove",                             *f = "Sunny Cove",     *p = "10nm"); // LX*
+   FMS (    0, 6,  9,14,  9,     *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm");
+   FMS (    0, 6,  9,14, 10,     *u = "Coffee Lake",               *ciu = TRUE, *f = "Skylake",        *p = "14nm");
+   FMS (    0, 6,  9,14, 11,     *u = "Coffee Lake",               *ciu = TRUE, *f = "Skylake",        *p = "14nm");
+   FMS (    0, 6,  9,14, 12,     *u = "Coffee Lake",               *ciu = TRUE, *f = "Skylake",        *p = "14nm");
+   FMS (    0, 6,  9,14, 13,     *u = "Coffee Lake",               *ciu = TRUE, *f = "Skylake",        *p = "14nm");
    FM  (    0, 6,  9,14,         *u = "Kaby Lake / Coffee Lake",                *f = "Skylake",        *p = "14nm");
-   FM  (    0, 6, 10, 6,         *u = "Coffee Lake",                            *f = "Skylake",        *p = "14nm"); // no spec update; only instlatx64 example
+   FM  (    0, 6, 10, 5,         *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm"); // LX*
+   FM  (    0, 6, 10, 6,         *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm"); // no spec update; only instlatx64 example
    F   (    0, 7,                *u = "Itanium");
-   FM  (    0,11,  0, 0,         *u = "Knights Ferry",                                                 *p = "45nm"); // found only on en.wikichip.org
-   FM  (    0,11,  0, 1,         *u = "Knights Corner",                                                *p = "22nm");
+   FM  (    0,11,  0, 0,         *u = "Knights Ferry",             *ciu = TRUE, *f = "K1OM",           *p = "45nm"); // found only on en.wikichip.org
+   FM  (    0,11,  0, 1,         *u = "Knights Corner",            *ciu = TRUE, *f = "K1OM",           *p = "22nm");
    FM  (    0,15,  0, 0,         *u = "Willamette",                             *f = "Netburst",       *p = ".18um");
    FM  (    0,15,  0, 1,         *u = "Willamette",                             *f = "Netburst",       *p = ".18um");
    FM  (    0,15,  0, 2,         *u = "Northwood",                              *f = "Netburst",       *p = ".13um");
@@ -2022,81 +2097,90 @@ decode_uarch_amd(unsigned int  val,
    cstring*  p = &arch->phys;
 
    START;
-   FM  (0, 4,  0, 3,         *u = "Am486");
-   FM  (0, 4,  0, 7,         *u = "Am486");
-   FM  (0, 4,  0, 8,         *u = "Am486");
-   FM  (0, 4,  0, 9,         *u = "Am486");
-   F   (0, 4,                *u = "Am5x86");
-   FM  (0, 5,  0, 6,         *u = "K6",          *p = ".30um");
-   F   (0, 5,                *u = "K6");
-   FM  (0, 6,  0, 1,         *u = "K7",          *p = ".25um");
-   FM  (0, 6,  0, 2,         *u = "K7",          *p = ".18um");
-   F   (0, 6,                *u = "K7");
-   FMS (0,15,  0, 4,  8,     *u = "K8",          *p = "754-pin, .13um");
-   FM  (0,15,  0, 4,         *u = "K8",          *p = "940-pin, .13um");
-   FM  (0,15,  0, 5,         *u = "K8",          *p = "940-pin, .13um");
-   FM  (0,15,  0, 7,         *u = "K8",          *p = "939-pin, .13um");
-   FM  (0,15,  0, 8,         *u = "K8",          *p = "754-pin, .13um");
-   FM  (0,15,  0,11,         *u = "K8",          *p = "939-pin, .13um");
-   FM  (0,15,  0,12,         *u = "K8",          *p = "754-pin, .13um");
-   FM  (0,15,  0,14,         *u = "K8",          *p = "754-pin, .13um");
-   FM  (0,15,  0,15,         *u = "K8",          *p = "939-pin, .13um");
-   FM  (0,15,  1, 4,         *u = "K8",          *p = "754-pin, 90nm");
-   FM  (0,15,  1, 5,         *u = "K8",          *p = "940-pin, 90nm");
-   FM  (0,15,  1, 7,         *u = "K8",          *p = "939-pin, 90nm");
-   FM  (0,15,  1, 8,         *u = "K8",          *p = "754-pin, 90nm");
-   FM  (0,15,  1,11,         *u = "K8",          *p = "939-pin, 90nm");
-   FM  (0,15,  1,12,         *u = "K8",          *p = "754-pin, 90nm");
-   FM  (0,15,  1,15,         *u = "K8",          *p = "939-pin, 90nm");
-   FM  (0,15,  2, 1,         *u = "K8",          *p = "940-pin, 90nm");
-   FM  (0,15,  2, 3,         *u = "K8",          *p = "939-pin, 90nm");
-   FM  (0,15,  2, 4,         *u = "K8",          *p = "754-pin, 90nm");
-   FM  (0,15,  2, 5,         *u = "K8",          *p = "940-pin, 90nm");
-   FM  (0,15,  2, 7,         *u = "K8",          *p = "939-pin, 90nm");
-   FM  (0,15,  2,11,         *u = "K8",          *p = "939-pin, 90nm");
-   FM  (0,15,  2,12,         *u = "K8",          *p = "754-pin, 90nm");
-   FM  (0,15,  2,15,         *u = "K8",          *p = "939-pin, 90nm");
-   FM  (0,15,  4, 1,         *u = "K8",          *p = "90nm");
-   FM  (0,15,  4, 3,         *u = "K8",          *p = "90nm");
-   FM  (0,15,  4, 8,         *u = "K8",          *p = "90nm");
-   FM  (0,15,  4,11,         *u = "K8",          *p = "90nm");
-   FM  (0,15,  4,12,         *u = "K8",          *p = "90nm");
-   FM  (0,15,  4,15,         *u = "K8",          *p = "90nm");
-   FM  (0,15,  5,13,         *u = "K8",          *p = "90nm");
-   FM  (0,15,  5,15,         *u = "K8",          *p = "90nm");
-   FM  (0,15,  6, 8,         *u = "K8",          *p = "65nm");
-   FM  (0,15,  6,11,         *u = "K8",          *p = "65nm");
-   FM  (0,15,  6,12,         *u = "K8",          *p = "65nm");
-   FM  (0,15,  6,15,         *u = "K8",          *p = "65nm");
-   FM  (0,15,  7,12,         *u = "K8",          *p = "65nm");
-   FM  (0,15,  7,15,         *u = "K8",          *p = "65nm");
-   FM  (0,15, 12, 1,         *u = "K8",          *p = "90nm");
-   FM  (1,15,  0, 2,         *u = "K10",         *p = "65nm");
-   FM  (1,15,  0, 4,         *u = "K10",         *p = "45nm");
-   FM  (1,15,  0, 5,         *u = "K10",         *p = "45nm");
-   FM  (1,15,  0, 6,         *u = "K10",         *p = "45nm");
-   FM  (1,15,  0, 8,         *u = "K10",         *p = "45nm");
-   FM  (1,15,  0, 9,         *u = "K10",         *p = "45nm");
-   FM  (1,15,  0,10,         *u = "K10",         *p = "45nm");
-   F   (2,15,                *u = "Puma 2008",   *p = "65nm");
-   F   (3,15,                *u = "K10",         *p = "32nm");
-   F   (5,15,                *u = "Bobcat",      *p = "40nm");
-   FM  (6,15,  0, 1,         *u = "Bulldozer",   *p = "32nm");
-   FM  (6,15,  0, 2,         *u = "Piledriver",  *p = "32nm");
-   FM  (6,15,  1, 0,         *u = "Piledriver",  *p = "32nm");
-   FM  (6,15,  1, 3,         *u = "Piledriver",  *p = "32nm");
-   FM  (6,15,  3, 0,         *u = "Steamroller", *p = "28nm");
-   FM  (6,15,  3, 8,         *u = "Steamroller", *p = "28nm");
-   FM  (6,15,  6, 5,         *u = "Excavator",   *p = "28nm"); // undocumented, but sample from Alexandros Couloumbis
-   FM  (6,15,  7, 0,         *u = "Excavator",   *p = "28nm");
-   FM  (7,15,  0, 0,         *u = "Jaguar",      *p = "28nm");
-   FM  (7,15,  3, 0,         *u = "Puma 2014",   *p = "28nm");
-   FM  (8,15,  0, 1,         *u = "Zen",         *p = "14nm");
-   FM  (8,15,  1, 1,         *u = "Zen",         *p = "14nm"); // found only on en.wikichip.org
-   FM  (8,15,  0, 8,         *u = "Zen+",        *p = "12nm");
-   FM  (8,15,  1, 8,         *u = "Zen+",        *p = "12nm"); // found only on en.wikichip.org
-   FM  (8,15,  3, 1,         *u = "Zen 2",       *p = "7nm");  // found only on en.wikichip.org
-   FM  (8,15,  7, 1,         *u = "Zen 2",       *p = "7nm");  // undocumented, but samples from Steven Noonan
+   FM  ( 0, 4,  0, 3,         *u = "Am486");
+   FM  ( 0, 4,  0, 7,         *u = "Am486");
+   FM  ( 0, 4,  0, 8,         *u = "Am486");
+   FM  ( 0, 4,  0, 9,         *u = "Am486");
+   F   ( 0, 4,                *u = "Am5x86");
+   FM  ( 0, 5,  0, 6,         *u = "K6",          *p = ".30um");
+   FM  ( 0, 5,  0, 7,         *u = "K6",          *p = ".25um"); // *p from sandpile.org
+   FM  ( 0, 5,  0,13,         *u = "K6",          *p = ".18um"); // *p from sandpile.org
+   F   ( 0, 5,                *u = "K6");
+   FM  ( 0, 6,  0, 1,         *u = "K7",          *p = ".25um");
+   FM  ( 0, 6,  0, 2,         *u = "K7",          *p = ".18um");
+   F   ( 0, 6,                *u = "K7");
+   FMS ( 0,15,  0, 4,  8,     *u = "K8",          *p = "754-pin, .13um");
+   FM  ( 0,15,  0, 4,         *u = "K8",          *p = "940-pin, .13um");
+   FM  ( 0,15,  0, 5,         *u = "K8",          *p = "940-pin, .13um");
+   FM  ( 0,15,  0, 7,         *u = "K8",          *p = "939-pin, .13um");
+   FM  ( 0,15,  0, 8,         *u = "K8",          *p = "754-pin, .13um");
+   FM  ( 0,15,  0,11,         *u = "K8",          *p = "939-pin, .13um");
+   FM  ( 0,15,  0,12,         *u = "K8",          *p = "754-pin, .13um");
+   FM  ( 0,15,  0,14,         *u = "K8",          *p = "754-pin, .13um");
+   FM  ( 0,15,  0,15,         *u = "K8",          *p = "939-pin, .13um");
+   FM  ( 0,15,  1, 4,         *u = "K8",          *p = "754-pin, 90nm");
+   FM  ( 0,15,  1, 5,         *u = "K8",          *p = "940-pin, 90nm");
+   FM  ( 0,15,  1, 7,         *u = "K8",          *p = "939-pin, 90nm");
+   FM  ( 0,15,  1, 8,         *u = "K8",          *p = "754-pin, 90nm");
+   FM  ( 0,15,  1,11,         *u = "K8",          *p = "939-pin, 90nm");
+   FM  ( 0,15,  1,12,         *u = "K8",          *p = "754-pin, 90nm");
+   FM  ( 0,15,  1,15,         *u = "K8",          *p = "939-pin, 90nm");
+   FM  ( 0,15,  2, 1,         *u = "K8",          *p = "940-pin, 90nm");
+   FM  ( 0,15,  2, 3,         *u = "K8",          *p = "939-pin, 90nm");
+   FM  ( 0,15,  2, 4,         *u = "K8",          *p = "754-pin, 90nm");
+   FM  ( 0,15,  2, 5,         *u = "K8",          *p = "940-pin, 90nm");
+   FM  ( 0,15,  2, 7,         *u = "K8",          *p = "939-pin, 90nm");
+   FM  ( 0,15,  2,11,         *u = "K8",          *p = "939-pin, 90nm");
+   FM  ( 0,15,  2,12,         *u = "K8",          *p = "754-pin, 90nm");
+   FM  ( 0,15,  2,15,         *u = "K8",          *p = "939-pin, 90nm");
+   FM  ( 0,15,  4, 1,         *u = "K8",          *p = "90nm");
+   FM  ( 0,15,  4, 3,         *u = "K8",          *p = "90nm");
+   FM  ( 0,15,  4, 8,         *u = "K8",          *p = "90nm");
+   FM  ( 0,15,  4,11,         *u = "K8",          *p = "90nm");
+   FM  ( 0,15,  4,12,         *u = "K8",          *p = "90nm");
+   FM  ( 0,15,  4,15,         *u = "K8",          *p = "90nm");
+   FM  ( 0,15,  5,13,         *u = "K8",          *p = "90nm");
+   FM  ( 0,15,  5,15,         *u = "K8",          *p = "90nm");
+   FM  ( 0,15,  6, 8,         *u = "K8",          *p = "65nm");
+   FM  ( 0,15,  6,11,         *u = "K8",          *p = "65nm");
+   FM  ( 0,15,  6,12,         *u = "K8",          *p = "65nm");
+   FM  ( 0,15,  6,15,         *u = "K8",          *p = "65nm");
+   FM  ( 0,15,  7,12,         *u = "K8",          *p = "65nm");
+   FM  ( 0,15,  7,15,         *u = "K8",          *p = "65nm");
+   FM  ( 0,15, 12, 1,         *u = "K8",          *p = "90nm");
+   FM  ( 1,15,  0, 0,         *u = "K10",         *p = "65nm"); // sandpile.org
+   FM  ( 1,15,  0, 2,         *u = "K10",         *p = "65nm");
+   FM  ( 1,15,  0, 4,         *u = "K10",         *p = "45nm");
+   FM  ( 1,15,  0, 5,         *u = "K10",         *p = "45nm");
+   FM  ( 1,15,  0, 6,         *u = "K10",         *p = "45nm");
+   FM  ( 1,15,  0, 8,         *u = "K10",         *p = "45nm");
+   FM  ( 1,15,  0, 9,         *u = "K10",         *p = "45nm");
+   FM  ( 1,15,  0,10,         *u = "K10",         *p = "45nm");
+   F   ( 2,15,                *u = "Puma 2008",   *p = "65nm");
+   F   ( 3,15,                *u = "K10",         *p = "32nm");
+   F   ( 5,15,                *u = "Bobcat",      *p = "40nm");
+   FM  ( 6,15,  0, 0,         *u = "Bulldozer",   *p = "32nm"); // instlatx64 engr sample
+   FM  ( 6,15,  0, 1,         *u = "Bulldozer",   *p = "32nm");
+   FM  ( 6,15,  0, 2,         *u = "Piledriver",  *p = "32nm");
+   FM  ( 6,15,  1, 0,         *u = "Piledriver",  *p = "32nm");
+   FM  ( 6,15,  1, 3,         *u = "Piledriver",  *p = "32nm");
+   FM  ( 6,15,  3, 0,         *u = "Steamroller", *p = "28nm");
+   FM  ( 6,15,  3, 8,         *u = "Steamroller", *p = "28nm");
+   FM  ( 6,15,  4, 0,         *u = "Steamroller", *p = "28nm"); // Software Optimization Guide (15h) says it has the same inst latencies as (6,15),(3,x).
+   FM  ( 6,15,  6, 0,         *u = "Excavator",   *p = "28nm"); // undocumented, but instlatx64 samples
+   FM  ( 6,15,  6, 5,         *u = "Excavator",   *p = "28nm"); // undocumented, but sample from Alexandros Couloumbis
+   FM  ( 6,15,  7, 0,         *u = "Excavator",   *p = "28nm");
+   FM  ( 7,15,  0, 0,         *u = "Jaguar",      *p = "28nm");
+   FM  ( 7,15,  3, 0,         *u = "Puma 2014",   *p = "28nm");
+   FM  ( 8,15,  0, 0,         *u = "Zen",         *p = "14nm"); // instlatx64 engr sample
+   FM  ( 8,15,  0, 1,         *u = "Zen",         *p = "14nm");
+   FM  ( 8,15,  0, 8,         *u = "Zen+",        *p = "12nm");
+   FM  ( 8,15,  1, 1,         *u = "Zen",         *p = "14nm"); // found only on en.wikichip.org & instlatx64 examples
+   FM  ( 8,15,  1, 8,         *u = "Zen+",        *p = "12nm"); // found only on en.wikichip.org
+   FM  ( 8,15,  3, 1,         *u = "Zen 2",       *p = "7nm");  // found only on en.wikichip.org
+   FM  ( 8,15,  6, 0,         *u = "Zen 2",       *p = "7nm");  // undocumented, geekbench.com example
+   FM  ( 8,15,  7, 1,         *u = "Zen 2",       *p = "7nm");  // undocumented, but samples from Steven Noonan
+   F   (10,15,                *u = "Zen 3",       *p = "7nm");  // undocumented, LX*
    DEFAULT                  ((void)NULL);
 }
 
@@ -2116,23 +2200,28 @@ decode_uarch_cyrix(unsigned int  val,
 }
 
 static void
-decode_uarch_via(unsigned int  val,
-                 arch_t*       arch)
+decode_uarch_via(unsigned int         val,
+                 arch_t*              arch,
+                 const code_stash_t*  stash)
+                 
 {
    init_arch(arch);
    
    cstring*  u   = &arch->uarch;
    boolean*  ciu = &arch->core_is_uarch;
+   cstring*  p   = &arch->phys;
 
    START;
-   F   (0, 5,                *u = "WinChip", *ciu = TRUE);
-   FM  (0, 6,  0, 6,         *u = "C3",      *ciu = TRUE);
-   FM  (0, 6,  0, 7,         *u = "C3",      *ciu = TRUE);
-   FM  (0, 6,  0, 8,         *u = "C3",      *ciu = TRUE);
-   FM  (0, 6,  0, 9,         *u = "C3",      *ciu = TRUE);
-   FM  (0, 6,  0,10,         *u = "C7");
-   FM  (0, 6,  0,13,         *u = "C7");
-   FM  (0, 6,  0,15,         *u = "C7");
+   F   (0, 5,                *u = "WinChip",    *ciu = TRUE);
+   FM  (0, 6,  0, 6,         *u = "C3",         *ciu = TRUE,  *p = ".18um");
+   FM  (0, 6,  0, 7,         *u = "C3",         *ciu = TRUE); // *p depends on core
+   FM  (0, 6,  0, 8,         *u = "C3",         *ciu = TRUE,  *p = ".13um");
+   FM  (0, 6,  0, 9,         *u = "C3",         *ciu = TRUE,  *p = ".13um");
+   FM  (0, 6,  0,10,         *u = "C7",                       *p = "90nm");
+   FM  (0, 6,  0,13,         *u = "C7",                       *p = "90nm");
+   FMSQ(0, 6,  0,15, 14, vZ, *u = "ZhangJiang",               *p = "28nm");
+   FM  (0, 6,  0,15,         *u = "C7");                      // *p depends on core
+   FM  (0, 7,  0,11,         *u = "ZhangJiang",               *p = "28nm");
    DEFAULT                  ((void)NULL);
 }
 
@@ -2228,18 +2317,21 @@ decode_uarch_zhaoxin(unsigned int  val,
    
    cstring*  u   = &arch->uarch;
    boolean*  ciu = &arch->core_is_uarch;
+   cstring*  p   = &arch->phys;
 
    START;
-   FM  (0, 7,  1,11,         *u = "WuDaoKou", *ciu = TRUE);
+   FM  (0, 7,  1,11,         *u = "WuDaoKou", *ciu = TRUE, *p = "28nm");
+   FM  (0, 7,  3,11,         *u = "LuJiaZui", *ciu = TRUE, *p = "16nm");
    DEFAULT                  ((void)NULL);
 }
 
 #undef ACT
 
 static void
-decode_uarch(unsigned int  val,
-             vendor_t      vendor,
-             arch_t*       arch)
+decode_uarch(unsigned int         val,
+             vendor_t             vendor,
+             const code_stash_t*  stash,
+             arch_t*              arch)
 {
    init_arch(arch);
    
@@ -2254,7 +2346,7 @@ decode_uarch(unsigned int  val,
       decode_uarch_cyrix(val, arch);
       break;
    case VENDOR_VIA:
-      decode_uarch_via(val, arch);
+      decode_uarch_via(val, arch, stash);
       break;
    case VENDOR_TRANSMETA:
       decode_uarch_transmeta(val, arch);
@@ -2289,7 +2381,7 @@ static void
 print_uarch(const code_stash_t*  stash)
 {
    arch_t  arch;
-   decode_uarch(stash->val_1_eax, stash->vendor, &arch);
+   decode_uarch(stash->val_1_eax, stash->vendor, stash, &arch);
    if (arch.uarch != NULL || arch.family != NULL || arch.phys != NULL) {
       ccstring  vendor = decode_vendor(stash->vendor);
       printf("   (uarch synth) =");
@@ -2316,7 +2408,7 @@ append_uarch(ccstring      synth,
 {
    if (synth != NULL) {
       arch_t  arch;
-      decode_uarch(val, vendor, &arch);
+      decode_uarch(val, vendor, NULL, &arch);
       if ((arch.uarch != NULL && !arch.core_is_uarch)
           || arch.family != NULL
           || arch.phys != NULL) {
@@ -2357,11 +2449,13 @@ debug_queries(const code_stash_t*  stash)
    DEBUGQ(sM);
    DEBUGQ(sX);
    DEBUGQ(dC);
+   DEBUGQ(da);
    DEBUGQ(MM);
    DEBUGQ(dd);
    DEBUGQ(dP);
    DEBUGQ(Xc);
    DEBUGQ(dc);
+   DEBUGQ(dG);
 
    DEBUGQ(xD);
    DEBUGQ(mD);
@@ -2370,9 +2464,9 @@ debug_queries(const code_stash_t*  stash)
    DEBUGQ(pK);
    DEBUGQ(sI);
    DEBUGQ(sP);
-   DEBUGQ(da);
+   DEBUGQ(dL);
    DEBUGQ(QW);
-   DEBUGQ(Dc);
+   DEBUGQ(DG);
    DEBUGQ(Qc);
    DEBUGQ(XE);
    DEBUGQ(sQ);
@@ -2446,9 +2540,9 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    cstring  result = NULL;
    
    START;
-   FM  (    0, 4,  0, 0,         "Intel i80486DX-25/33");
-   FM  (    0, 4,  0, 1,         "Intel i80486DX-50");
-   FM  (    0, 4,  0, 2,         "Intel i80486SX");
+   FM  (    0, 4,  0, 0,         "Intel i80486DX-25/33, .18um"); // process from sandpile.org
+   FM  (    0, 4,  0, 1,         "Intel i80486DX-50, .18um"); // process from sandpile.org
+   FM  (    0, 4,  0, 2,         "Intel i80486SX, .18um"); // process from sandpile.org
    FM  (    0, 4,  0, 3,         "Intel i80486DX/2");
    FM  (    0, 4,  0, 4,         "Intel i80486SL, .8um");
    FM  (    0, 4,  0, 5,         "Intel i80486SX/2, .8um");
@@ -2456,12 +2550,14 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FM  (    0, 4,  0, 8,         "Intel i80486DX/4, .6um");
    FM  (    0, 4,  0, 9,         "Intel i80486DX/4-WB, .6um");
    F   (    0, 4,                "Intel i80486 (unknown model)");
-   FM  (    0, 5,  0, 0,         "Intel Pentium 60/66 A-step");
+   FM  (    0, 5,  0, 0,         "Intel Pentium 60/66 A-step"); // no docs
+   // Intel docs (243326).
    TFM (1,  0, 5,  0, 1,         "Intel Pentium 60/66 OverDrive for P5");
    FMS (    0, 5,  0, 1,  3,     "Intel Pentium 60/66 (B1)");
    FMS (    0, 5,  0, 1,  5,     "Intel Pentium 60/66 (C1)");
    FMS (    0, 5,  0, 1,  7,     "Intel Pentium 60/66 (D1)");
    FM  (    0, 5,  0, 1,         "Intel Pentium 60/66");
+   // Intel docs (242480).
    TFM (1,  0, 5,  0, 2,         "Intel Pentium 75 - 200 OverDrive for P54C");
    FMS (    0, 5,  0, 2,  1,     "Intel Pentium P54C 75 - 200 (B1)");
    FMS (    0, 5,  0, 2,  2,     "Intel Pentium P54C 75 - 200 (B3)");
@@ -2471,30 +2567,37 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMS (    0, 5,  0, 2, 11,     "Intel Pentium P54C 75 - 200 (cB1)");
    FMS (    0, 5,  0, 2, 12,     "Intel Pentium P54C 75 - 200 (cC0)");
    FM  (    0, 5,  0, 2,         "Intel Pentium P54C 75 - 200");
-   TFM (1,  0, 5,  0, 3,         "Intel Pentium OverDrive for i486 (P24T)");
+   TFM (1,  0, 5,  0, 3,         "Intel Pentium OverDrive for i486 (P24T)"); // no docs
+   // Intel docs (242480).
    TFM (1,  0, 5,  0, 4,         "Intel Pentium OverDrive for P54C");
    FMS (    0, 5,  0, 4,  3,     "Intel Pentium MMX P55C (B1)");
    FMS (    0, 5,  0, 4,  4,     "Intel Pentium MMX P55C (A3)");
    FM  (    0, 5,  0, 4,         "Intel Pentium MMX P55C");
+   // Intel docs (242480).
    FMS (    0, 5,  0, 7,  0,     "Intel Pentium MMX P54C 75 - 200 (A4)");
    FM  (    0, 5,  0, 7,         "Intel Pentium MMX P54C 75 - 200");
+   // Intel docs (242480).
    FMS (    0, 5,  0, 8,  1,     "Intel Pentium MMX P55C (Tillamook A0)");
    FMS (    0, 5,  0, 8,  2,     "Intel Pentium MMX P55C (Tillamook B2)");
    FM  (    0, 5,  0, 8,         "Intel Pentium MMX P55C (Tillamook)");
+   // Intel docs (329676).
    FM  (    0, 5,  0, 9,         "Intel Quark X1000 / D1000 / D2000 / C1000 (Lakemont)");
    F   (    0, 5,                "Intel Pentium (unknown model)");
    FM  (    0, 6,  0, 0,         "Intel Pentium Pro A-step");
+   // Intel docs (242689).
    FMS (    0, 6,  0, 1,  1,     "Intel Pentium Pro (B0)");
    FMS (    0, 6,  0, 1,  2,     "Intel Pentium Pro (C0)");
    FMS (    0, 6,  0, 1,  6,     "Intel Pentium Pro (sA0)");
    FMS (    0, 6,  0, 1,  7,     "Intel Pentium Pro (sA1), .35um");
    FMS (    0, 6,  0, 1,  9,     "Intel Pentium Pro (sB1), .35um");
    FM  (    0, 6,  0, 1,         "Intel Pentium Pro");
+   // Intel docs (243337)
    TFM (1,  0, 6,  0, 3,         "Intel Pentium II OverDrive");
    FMS (    0, 6,  0, 3,  3,     "Intel Pentium II (Klamath C0)");
    FMS (    0, 6,  0, 3,  4,     "Intel Pentium II (Klamath C1)");
    FM  (    0, 6,  0, 3,         "Intel Pentium II (Klamath)");
    FM  (    0, 6,  0, 4,         "Intel Pentium P55CT OverDrive (Deschutes)");
+   // Intel docs (243337, 243748, 243776, 243887).
    FMSQ(    0, 6,  0, 5,  0, xD, "Intel Pentium II Xeon (Deschutes A0)");
    FMSQ(    0, 6,  0, 5,  0, mD, "Intel Mobile Pentium II (Deschutes A0)");
    FMSQ(    0, 6,  0, 5,  0, cD, "Intel Celeron (Deschutes A0)");
@@ -2513,6 +2616,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  0, 5,     mD, "Intel Mobile Pentium II (Deschutes)");
    FMQ (    0, 6,  0, 5,     cD, "Intel Celeron (Deschutes)");
    FM  (    0, 6,  0, 5,         "Intel Pentium II (unknown type) (Deschutes)");
+   // Intel docs (243748, 243887, 244444).
    FMSQ(    0, 6,  0, 6,  0, dP, "Intel Pentium II (Mendocino A0)");
    FMSQ(    0, 6,  0, 6,  0, dC, "Intel Celeron (Mendocino A0)");
    FMS (    0, 6,  0, 6,  0,     "Intel Pentium II (unknown type) (Mendocino A0)");
@@ -2521,6 +2625,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMS (    0, 6,  0, 6,  5,     "Intel Pentium II (unknown type) (Mendocino B0)");
    FMS (    0, 6,  0, 6, 10,     "Intel Mobile Pentium II (Mendocino A0)");
    FM  (    0, 6,  0, 6,         "Intel Pentium II (Mendocino)");
+   // Intel docs (244453, 244460).
    FMSQ(    0, 6,  0, 7,  2, pK, "Intel Pentium III (Katmai B0)");
    FMSQ(    0, 6,  0, 7,  2, xK, "Intel Pentium III Xeon (Katmai B0)");
    FMS (    0, 6,  0, 7,  2,     "Intel Pentium III (unknown type) (Katmai B0)");
@@ -2530,6 +2635,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  0, 7,     pK, "Intel Pentium III (Katmai)");
    FMQ (    0, 6,  0, 7,     xK, "Intel Pentium III Xeon (Katmai)");
    FM  (    0, 6,  0, 7,         "Intel Pentium III (unknown type) (Katmai)");
+   // Intel docs (243748, 244453, 244460, 245306, 245421).
    FMSQ(    0, 6,  0, 8,  1, sX, "Intel Pentium III Xeon (Coppermine A2)");
    FMSQ(    0, 6,  0, 8,  1, MC, "Intel Mobile Celeron (Coppermine A2)");
    FMSQ(    0, 6,  0, 8,  1, dC, "Intel Celeron (Coppermine A2)");
@@ -2560,16 +2666,19 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  0, 8,     MP, "Intel Mobile Pentium III (Coppermine)");
    FMQ (    0, 6,  0, 8,     dP, "Intel Pentium III (Coppermine)");
    FM  (    0, 6,  0, 8,         "Intel Pentium III (unknown type) (Coppermine)");
+   // Intel docs (252665, 300303).
    FMSQ(    0, 6,  0, 9,  5, dC, "Intel Celeron M (Banias B1)");
    FMSQ(    0, 6,  0, 9,  5, dP, "Intel Pentium M (Banias B1)");
    FMS (    0, 6,  0, 9,  5,     "Intel Pentium M (unknown type) (Banias B1)");
    FMQ (    0, 6,  0, 9,     dC, "Intel Celeron M (Banias)");
    FMQ (    0, 6,  0, 9,     dP, "Intel Pentium M (Banias)");
    FM  (    0, 6,  0, 9,         "Intel Pentium M (unknown type) (Banias)");
+   // Intel docs (244460).
    FMS (    0, 6,  0,10,  0,     "Intel Pentium III Xeon (Cascades A0)");
    FMS (    0, 6,  0,10,  1,     "Intel Pentium III Xeon (Cascades A1)");
    FMS (    0, 6,  0,10,  4,     "Intel Pentium III Xeon (Cascades B0)");
    FM  (    0, 6,  0,10,         "Intel Pentium III Xeon (Cascades)");
+   // Intel docs (243748, 244453, 245306, 245421).
    FMSQ(    0, 6,  0,11,  1, dC, "Intel Celeron (Tualatin A1)");
    FMSQ(    0, 6,  0,11,  1, MC, "Intel Mobile Celeron (Tualatin A1)");
    FMSQ(    0, 6,  0,11,  1, dP, "Intel Pentium III (Tualatin A1)");
@@ -2582,6 +2691,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  0,11,     MC, "Intel Mobile Celeron (Tualatin)");
    FMQ (    0, 6,  0,11,     dP, "Intel Pentium III (Tualatin)");
    FM  (    0, 6,  0,11,         "Intel Pentium III (unknown type) (Tualatin)");
+   // Intel docs (300303, 302209).
    FMSQ(    0, 6,  0,13,  6, dC, "Intel Celeron M (Dothan B1), 90nm");
    FMSQ(    0, 6,  0,13,  6, dP, "Intel Pentium M (Dothan B1), 90nm");
    FMS (    0, 6,  0,13,  6,     "Intel Pentium M (unknown type) (Dothan B1), 90nm");
@@ -2593,24 +2703,27 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  0,13,     MP, "Intel Processor A100/A110 (Stealey)");
    FMQ (    0, 6,  0,13,     dP, "Intel Pentium M (Dothan)");
    FM  (    0, 6,  0,13,         "Intel Pentium M (unknown type) (Dothan/Crofton)");
+   // Intel docs (300303, 309222, 311392, 316515).
    FMSQ(    0, 6,  0,14,  8, sX, "Intel Xeon Processor LV (Sossaman C0)");
    FMSQ(    0, 6,  0,14,  8, dC, "Intel Celeron (Yonah C0)");
-   FMSQ(    0, 6,  0,14,  8, Dc, "Intel Core Duo (Yonah C0)");
-   FMSQ(    0, 6,  0,14,  8, dc, "Intel Core Solo (Yonah C0)");
+   FMSQ(    0, 6,  0,14,  8, DG, "Intel Core Duo (Yonah C0)");
+   FMSQ(    0, 6,  0,14,  8, dG, "Intel Core Solo (Yonah C0)");
    FMS (    0, 6,  0,14,  8,     "Intel Core (unknown type) (Yonah/Sossaman C0)");
    FMSQ(    0, 6,  0,14, 12, sX, "Intel Xeon Processor LV (Sossaman D0)");
    FMSQ(    0, 6,  0,14, 12, dC, "Intel Celeron M (Yonah D0)");
    FMSQ(    0, 6,  0,14, 12, MP, "Intel Pentium Dual-Core Mobile T2000 (Yonah D0)");
-   FMSQ(    0, 6,  0,14, 12, Dc, "Intel Core Duo (Yonah D0)");
-   FMSQ(    0, 6,  0,14, 12, dc, "Intel Core Solo (Yonah D0)");
+   FMSQ(    0, 6,  0,14, 12, DG, "Intel Core Duo (Yonah D0)");
+   FMSQ(    0, 6,  0,14, 12, dG, "Intel Core Solo (Yonah D0)");
    FMS (    0, 6,  0,14, 12,     "Intel Core (unknown type) (Yonah/Sossaman D0)");
    FMS (    0, 6,  0,14, 13,     "Intel Pentium Dual-Core Mobile T2000 (Yonah M0)");
    FMQ (    0, 6,  0,14,     sX, "Intel Xeon Processor LV (Sossaman)");
    FMQ (    0, 6,  0,14,     dC, "Intel Celeron (Yonah)");
    FMQ (    0, 6,  0,14,     MP, "Intel Pentium Dual-Core Mobile (Yonah)");
-   FMQ (    0, 6,  0,14,     Dc, "Intel Core Duo (Yonah)");
-   FMQ (    0, 6,  0,14,     dc, "Intel Core Solo (Yonah)");
+   FMQ (    0, 6,  0,14,     DG, "Intel Core Duo (Yonah)");
+   FMQ (    0, 6,  0,14,     dG, "Intel Core Solo (Yonah)");
    FM  (    0, 6,  0,14,         "Intel Core (unknown type) (Yonah/Sossaman)");
+   // Intel docs (313279, 313356, 314079, 314916, 315338, 315593, 316134,
+   // 316515, 316982, 317667, 318081, 318925, 319735).
    FMSQ(    0, 6,  0,15,  2, sX, "Intel Dual-Core Xeon Processor 3000 (Conroe L2)");
    FMSQ(    0, 6,  0,15,  2, Mc, "Intel Core Duo Mobile (Merom L2)");
    FMSQ(    0, 6,  0,15,  2, dc, "Intel Core Duo (Conroe L2)");
@@ -2619,12 +2732,12 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMS (    0, 6,  0,15,  4,     "Intel Core 2 Duo (Conroe B0) / Xeon Processor 5100 (Woodcrest B0) (pre-production)");
    FMSQ(    0, 6,  0,15,  5, QW, "Intel Dual-Core Xeon Processor 5100 (Woodcrest B1) (pre-production)");
    FMSQ(    0, 6,  0,15,  5, XE, "Intel Core 2 Extreme Processor (Conroe B1)");
-   FMSQ(    0, 6,  0,15,  5, da, "Intel Core 2 Duo (Allendale B1)");
+   FMSQ(    0, 6,  0,15,  5, dL, "Intel Core 2 Duo (Allendale B1)");
    FMSQ(    0, 6,  0,15,  5, dc, "Intel Core 2 Duo (Conroe B1)");
    FMS (    0, 6,  0,15,  5,     "Intel Core 2 (unknown type) (Conroe/Allendale B1)");
    FMSQ(    0, 6,  0,15,  6, Xc, "Intel Core 2 Extreme Processor (Conroe B2)");
    FMSQ(    0, 6,  0,15,  6, Mc, "Intel Core 2 Duo Mobile (Merom B2)");
-   FMSQ(    0, 6,  0,15,  6, da, "Intel Core 2 Duo (Allendale B2)");
+   FMSQ(    0, 6,  0,15,  6, dL, "Intel Core 2 Duo (Allendale B2)");
    FMSQ(    0, 6,  0,15,  6, dc, "Intel Core 2 Duo (Conroe B2)");
    FMSQ(    0, 6,  0,15,  6, dC, "Intel Celeron M (Conroe B2)");
    FMSQ(    0, 6,  0,15,  6, sX, "Intel Dual-Core Xeon Processor 3000 (Conroe B2) / Dual-Core Xeon Processor 5100 (Woodcrest B2)");
@@ -2657,7 +2770,9 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  0,15,     dP, "Intel Pentium Dual-Core (Allendale)");
    FMQ (    0, 6,  0,15,     dC, "Intel Celeron M (Conroe) / Celeron (Merom) / Celeron Dual-Core (Allendale)");
    FM  (    0, 6,  0,15,         "Intel Core 2 (unknown type) (Merom/Conroe/Allendale/Kentsfield/Allendale/Clovertown/Woodcrest/Tigerton)");
+   // Intel docs (320257).
    FMS (    0, 6,  1, 5,  0,     "Intel EP80579 (Tolapai B0)");
+   // Intel docs (314079, 316964, 317667, 318547).
    FMSQ(    0, 6,  1, 6,  1, MC, "Intel Celeron Processor 200/400/500 (Conroe-L/Merom-L A1)");
    FMSQ(    0, 6,  1, 6,  1, dC, "Intel Celeron M (Merom-L A1)");
    FMSQ(    0, 6,  1, 6,  1, Mc, "Intel Core 2 Duo Mobile (Merom A1)");
@@ -2666,6 +2781,8 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  1, 6,     dC, "Intel Celeron M (Merom-L)");
    FMQ (    0, 6,  1, 6,     Mc, "Intel Core 2 Duo Mobile (Merom)");
    FM  (    0, 6,  1, 6,         "Intel Core 2 (unknown type) (Merom/Conroe)");
+   // Intel docs (318585, 318586, 318727, 318733, 318915, 319006, 319007,
+   // 319129, 320121, 320468, 320469, 322568).
    FMSQ(    0, 6,  1, 7,  6, sQ, "Intel Xeon Processor 3300 (Yorkfield C0) / Xeon Processor 5200 (Wolfdale C0) / Xeon Processor 5400 (Harpertown C0)");
    FMSQ(    0, 6,  1, 7,  6, sX, "Intel Xeon Processor 3100 (Wolfdale C0) / Xeon Processor 5200 (Wolfdale C0) / Xeon Processor 5400 (Harpertown C0)");
    FMSQ(    0, 6,  1, 7,  6, Xc, "Intel Core 2 Extreme QX9000 (Yorkfield C0)");
@@ -2686,8 +2803,9 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMSQ(    0, 6,  1, 7, 10, Qc, "Intel Core 2 Quad-Core Q9000 (Yorkfield R0)");
    FMSQ(    0, 6,  1, 7, 10, de, "Intel Core 2 Duo (Wolfdale E0)");
    FMSQ(    0, 6,  1, 7, 10, dc, "Intel Core 2 Duo (Wolfdale R0)");
-   FMSQ(    0, 6,  1, 7, 10, dP, "Intel Pentium Dual-Core Processor E5000/E6000 (Wolfdale R0)");
-   FMSQ(    0, 6,  1, 7, 10, dC, "Intel Celeron E3000 (Wolfdale R0)");
+   FMSQ(    0, 6,  1, 7, 10, dP, "Intel Pentium Dual-Core Processor E5000/E6000 / Pentium T4000 (Wolfdale R0)");
+   FMSQ(    0, 6,  1, 7, 10, dC, "Intel Celeron E3000 / T3000 / 900 / SU2300 (Wolfdale R0)"); // T3000 & 900 names from MRG* 2018-03-06
+   FMSQ(    0, 6,  1, 7, 10, MC, "Intel Celeron M ULV 700 (Penryn R0)");
    FMSQ(    0, 6,  1, 7, 10, se, "Intel Xeon Processor 3300 (Yorkfield E0)");
    FMSQ(    0, 6,  1, 7, 10, sQ, "Intel Xeon Processor 3300 (Yorkfield R0)");
    FMSQ(    0, 6,  1, 7, 10, sX, "Intel Xeon Processor 3100 (Wolfdale E0) / Xeon Processor 3300 (Yorkfield R0) / Xeon Processor 5200 (Wolfdale E0) / Xeon Processor 5400 (Harpertown E0)");
@@ -2700,8 +2818,10 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  1, 7,     Qc, "Intel Core 2 Quad-Core (Yorkfield)");
    FMQ (    0, 6,  1, 7,     dc, "Intel Core 2 Duo (Wolfdale)");
    FMQ (    0, 6,  1, 7,     dC, "Intel Celeron (Wolfdale)");
-   FMQ (    0, 6,  1, 7,     dP, "Intel Pentium Dual-Core (Wolfdale)");
+   FMQ (    0, 6,  1, 7,     MC, "Intel Celeron M ULV (Penryn)");
+   FMQ (    0, 6,  1, 7,     dP, "Intel Pentium (Wolfdale)");
    FM  (    0, 6,  1, 7,         "Intel Core 2 (unknown type) (Penryn/Wolfdale/Yorkfield/Harpertown)");
+   // Intel docs (320836, 321324, 321333).
    FMS (    0, 6,  1,10,  4,     "Intel Core i7-900 (Bloomfield C0)");
    FMSQ(    0, 6,  1,10,  5, dc, "Intel Core i7-900 (Bloomfield D0)");
    FMSQ(    0, 6,  1,10,  5, sX, "Intel Xeon Processor 3500 (Bloomfield D0) / Xeon Processor 5500 (Gainestown D0)");
@@ -2709,18 +2829,22 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  1,10,     dc, "Intel Core (Bloomfield)");
    FMQ (    0, 6,  1,10,     sX, "Intel Xeon (Bloomfield / Gainestown)");
    FM  (    0, 6,  1,10,         "Intel Core (unknown type) (Bloomfield / Gainestown)");
+   // Intel docs (319536, 319974, 320047, 320529, 322861, 322862, 322849,
+   // 324341).
    FMS (    0, 6,  1,12,  1,     "Intel Atom N270 (Diamondville B0)");
    FMS (    0, 6,  1,12,  2,     "Intel Atom 200/N200/300 (Diamondville C0) / Atom Z500 (Silverthorne C0)");
    FMS (    0, 6,  1,12, 10,     "Intel Atom D400/N400 (Pineview A0) / Atom D500/N500 (Pineview B0)");
    FM  (    0, 6,  1,12,         "Intel Atom (Diamondville / Silverthorne / Pineview)");
+   // Intel docs (320336).
    FMS (    0, 6,  1,13,  1,     "Intel Xeon Processor 7400 (Dunnington A1)");
    FM  (    0, 6,  1,13,         "Intel Xeon (unknown type) (Dunnington)");
-   FMSQ(    0, 6,  1,14,  4, sX, "Intel Xeon Processor C3500/C5500 (Jasper Forest B0)");
+   // Intel docs (320767, 322166, 322373, 323105).
+   FMSQ(    0, 6,  1,14,  4, sX, "Intel Xeon Processor EC3500/EC5500 (Jasper Forest B0)"); // EC names from MRG* 2018-03-06
    FMSQ(    0, 6,  1,14,  4, dC, "Intel Celeron P1053 (Jasper Forest B0)");
    FMS (    0, 6,  1,14,  4,     "Intel Xeon (unknown type) (Jasper Forest B0)");
    FMSQ(    0, 6,  1,14,  5, sX, "Intel Xeon Processor 3400 (Lynnfield B1)");
    FMSQ(    0, 6,  1,14,  5, Mc, "Intel Core i7-700/800/900 Mobile (Clarksfield B1)");
-   FMSQ(    0, 6,  1,14,  5, dc, "Intel Core i5-700 / i7-800 (Lynnfield B1)");
+   FMSQ(    0, 6,  1,14,  5, dc, "Intel Core i*-700/800/900 (Lynnfield B1)"); // 900 from MRG* 2018-03-06
    FMS (    0, 6,  1,14,  5,     "Intel Core (unknown type) (Lynnfield/Clarksfield B1)");
    FMQ (    0, 6,  1,14,     sX, "Intel Xeon (Lynnfield) / Xeon (Jasper Forest)");
    FMQ (    0, 6,  1,14,     dC, "Intel Celeron (Jasper Forest)");
@@ -2728,17 +2852,18 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  1,14,     dc, "Intel Core (Lynnfield)");
    FM  (    0, 6,  1,14,         "Intel Core (unknown type) (Lynnfield/Clarksfield)");
    FM  (    0, 6,  1,15,         "Intel (unknown model) (Havendale/Auburndale)");
+   // Intel docs (322814, 322911, 323179, 323847, 323056, 324456).
    FMSQ(    0, 6,  2, 5,  2, sX, "Intel Xeon Processor L3406 (Clarkdale C2)");
    FMSQ(    0, 6,  2, 5,  2, MC, "Intel Celeron Mobile P4500 (Arrandale C2)");
    FMSQ(    0, 6,  2, 5,  2, MP, "Intel Pentium P6000 Mobile (Arrandale C2)");
-   FMSQ(    0, 6,  2, 5,  2, dP, "Intel Pentium G6900 / P4505 (Clarkdale C2)");
-   FMSQ(    0, 6,  2, 5,  2, Mc, "Intel Core i3-300 Mobile / Core i5-400 Mobile / Core i5-500 Mobile / Core i7-600 Mobile (Arrandale C2)");
-   FMSQ(    0, 6,  2, 5,  2, dc, "Intel Core i3-300 / i3-500 / i5-500 / i5-600 / i7-600 (Clarkdale C2)");
+   FMSQ(    0, 6,  2, 5,  2, dP, "Intel Pentium G6900 / P4500 (Clarkdale C2)");
+   FMSQ(    0, 6,  2, 5,  2, Mc, "Intel Core i*-300/400/500/600 Mobile (Arrandale C2)");
+   FMSQ(    0, 6,  2, 5,  2, dc, "Intel Core i*-300/500/600 (Clarkdale C2)");
    FMS (    0, 6,  2, 5,  2,     "Intel Core (unknown type) (Clarkdale/Arrandale C2)");
    FMSQ(    0, 6,  2, 5,  5, MC, "Intel Celeron Mobile U3400 (Arrandale K0) / Celeron Mobile P4600 (Arrandale K0)");
    FMSQ(    0, 6,  2, 5,  5, MP, "Intel Pentium U5000 Mobile (Arrandale K0)");
-   FMSQ(    0, 6,  2, 5,  5, dP, "Intel Pentium P4505 / U3405 (Clarkdale K0)");
-   FMSQ(    0, 6,  2, 5,  5, dc, "Intel Core i3-300 / i3-500 / i5-400 / i5-500 / i5-600 / i7-600 (Clarkdale K0)");
+   FMSQ(    0, 6,  2, 5,  5, dP, "Intel Pentium P4500 / U3400 / G6900 (Clarkdale K0)"); // G6900 only from MRG* 2018-03-06
+   FMSQ(    0, 6,  2, 5,  5, dc, "Intel Core i*-300/400/500/600 (Clarkdale K0)");
    FMS (    0, 6,  2, 5,  5,     "Intel Core (unknown type) (Clarkdale/Arrandale K0)");
    FMQ (    0, 6,  2, 5,     sX, "Intel Xeon Processor L3406 (Clarkdale)");
    FMQ (    0, 6,  2, 5,     MC, "Intel Celeron Mobile (Arrandale)");
@@ -2747,219 +2872,444 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  2, 5,     Mc, "Intel Core Mobile (Arrandale)");
    FMQ (    0, 6,  2, 5,     dc, "Intel Core (Clarkdale)");
    FM  (    0, 6,  2, 5,         "Intel Core (unknown type) (Clarkdale/Arrandale)");
+   // Intel docs (324209, 325307, 325309, 325630).
    FMS (    0, 6,  2, 6,  1,     "Intel Atom Z600 (Lincroft C0) / Atom E600 (Tunnel Creek B0/B1)");
    FM  (    0, 6,  2, 6,         "Intel Atom Z600 (Lincroft) / Atom E600 (Tunnel Creek B0/B1)");
-   FM  (    0, 6,  2, 7,         "Intel Atom Z2000 (Medfield)"); // no spec update, only instlatx64 example
+   FM  (    0, 6,  2, 7,         "Intel Atom Z2000 (Medfield)"); // no spec update, only instlatx64 example (stepping 1)
+   // Intel docs (327335) omit stepping numbers, but (324643, 324827, 324972)
+   // provide some.  An instlatx64 stepping 6 example has been spoted, but it
+   // isn't known which stepping name that is.
    FMSQ(    0, 6,  2,10,  7, Xc, "Intel Mobile Core i7 Extreme (Sandy Bridge D2/J1/Q0)");
    FMSQ(    0, 6,  2,10,  7, Mc, "Intel Mobile Core i*-2000 (Sandy Bridge D2/J1/Q0)");
    FMSQ(    0, 6,  2,10,  7, dc, "Intel Core i*-2000 (Sandy Bridge D2/J1/Q0)");
    FMSQ(    0, 6,  2,10,  7, MC, "Intel Celeron G400/G500/700/800/B800 (Sandy Bridge J1/Q0)");
    FMSQ(    0, 6,  2,10,  7, sX, "Intel Xeon E3-1100 / E3-1200 v1 (Sandy Bridge D2/J1/Q0)");
-   FMSQ(    0, 6,  2,10,  7, dP, "Intel Pentium G500/G600/G800 / Pentium B915C (Sandy Bridge Q0)");
+   FMSQ(    0, 6,  2,10,  7, dP, "Intel Pentium G500/G600/G800 / Pentium 900 (Sandy Bridge Q0)");
    FMS (    0, 6,  2,10,  7,     "Intel Core (unknown type) (Sandy Bridge D2/J1/Q0)");
    FMQ (    0, 6,  2,10,     Xc, "Intel Mobile Core i7 Extreme (Sandy Bridge)");
    FMQ (    0, 6,  2,10,     Mc, "Intel Mobile Core i*-2000 (Sandy Bridge)");
-   FMQ (    0, 6,  2,10,     dc, "Intel Core i5-2000 / Core i7-2000 (Sandy Bridge)");
+   FMQ (    0, 6,  2,10,     dc, "Intel Core i*-2000 (Sandy Bridge)");
    FMQ (    0, 6,  2,10,     MC, "Intel Celeron G400/G500/700/800/B800 (Sandy Bridge)");
    FMQ (    0, 6,  2,10,     sX, "Intel Xeon E3-1100 / E3-1200 v1 (Sandy Bridge)");
-   FMQ (    0, 6,  2,10,     dP, "Intel Pentium G500/G600/G800 / Pentium B915C (Sandy Bridge)");
+   FMQ (    0, 6,  2,10,     dP, "Intel Pentium G500/G600/G800 / Pentium 900 (Sandy Bridge)");
    FM  (    0, 6,  2,10,         "Intel Core (unknown type) (Sandy Bridge)");
+   // Intel docs (323254: i7-900, 323338: Xeon 3600 , 323372: Xeon 5600).
+   // https://en.wikipedia.org/wiki/Westmere_(microarchitecture) provided
+   // A0 & B0 stepping values.
+   FMSQ(    0, 6,  2,12,  0, dc, "Intel Core i7-900 / Core i7-980X (Gulftown A0)");
+   FMSQ(    0, 6,  2,12,  0, sX, "Intel Xeon Processor 3600 / 5600 (Westmere-EP A0)");
+   FMS (    0, 6,  2,12,  0,     "Intel Core (unknown type) (Gulftown/Westmere-EP A0)");
+   FMSQ(    0, 6,  2,12,  1, dc, "Intel Core i7-900 / Core i7-980X (Gulftown B0)");
+   FMSQ(    0, 6,  2,12,  1, sX, "Intel Xeon Processor 3600 / 5600 (Westmere-EP B0)");
+   FMS (    0, 6,  2,12,  1,     "Intel Core (unknown type) (Gulftown/Westmere-EP B0)");
    FMSQ(    0, 6,  2,12,  2, dc, "Intel Core i7-900 / Core i7-980X (Gulftown B1)");
-   FMSQ(    0, 6,  2,12,  2, sX, "Intel Xeon Processor 3600 (Westmere-EP B1) / Xeon Processor 5600 (Westmere-EP B1)");
+   FMSQ(    0, 6,  2,12,  2, sX, "Intel Xeon Processor 3600 / 5600 (Westmere-EP B1)");
    FMS (    0, 6,  2,12,  2,     "Intel Core (unknown type) (Gulftown/Westmere-EP B1)");
-   FM  (    0, 6,  2,12,         "Intel Core (unknown type) (Gulftown) / Xeon (Westmere-EP)");
-   FMSQ(    0, 6,  2,13,  6, sX, "Intel Xeon E5-1600/2600 (Sandy Bridge-E C1)");
-   FMSQ(    0, 6,  2,13,  6, dP, "Intel Core i7-3800/3900 (Sandy Bridge-E C1)");
+   FMQ (    0, 6,  2,12,     dc, "Intel Core (unknown type) (Gulftown)");
+   FMQ (    0, 6,  2,12,     sX, "Intel Xeon (unknown type) (Westmere-EP)");
+   FM  (    0, 6,  2,12,         "Intel (unknown type) (Gulftown/Westmere-EP)");
+   // Intel docs (326198, 326510).
+   FMSQ(    0, 6,  2,13,  6, sX, "Intel Xeon E5-1600/2600 (Sandy Bridge-E C1/M0)");
+   FMSQ(    0, 6,  2,13,  6, dc, "Intel Core i7-3800/3900 (Sandy Bridge-E C1)");
    FMS (    0, 6,  2,13,  6,     "Intel Core (unknown type) (Sandy Bridge-E C1)");
    FMSQ(    0, 6,  2,13,  7, sX, "Intel Xeon E5-1600/2600/4600 (Sandy Bridge-E C2/M1)");
-   FMSQ(    0, 6,  2,13,  7, dP, "Intel Core i7-3800/3900 (Sandy Bridge-E C2)");
+   FMSQ(    0, 6,  2,13,  7, dc, "Intel Core i7-3800/3900 (Sandy Bridge-E C2)");
+   FMSQ(    0, 6,  2,13,  7, dP, "Intel Pentium 1405 (Sandy Bridge-E C1)"); // MRG* 2018-03-06
    FMS (    0, 6,  2,13,  7,     "Intel Core (unknown type) (Sandy Bridge-E C2/M1)");
    FMQ (    0, 6,  2,13,     sX, "Intel Xeon E5-1600/2600 (Sandy Bridge-E)");
-   FMQ (    0, 6,  2,13,     dP, "Intel Core i7-3800/3900 (Sandy Bridge-E)");
+   FMQ (    0, 6,  2,13,     dc, "Intel Core i7-3800/3900 (Sandy Bridge-E)");
+   FMQ (    0, 6,  2,13,     dP, "Intel Pentium 1405 (Sandy Bridge-E)"); // MRG* 2018-03-06
    FM  (    0, 6,  2,13,         "Intel Core (unknown type) (Sandy Bridge-E)");
-   FMS (    0, 6,  2,14,  6,     "Intel Xeon Processor 7500 (Beckton D0)");
-   FM  (    0, 6,  2,14,         "Intel Xeon Processor 7500 (Beckton)");
+   // Intel docs (323344) are inconsistent.  Using Table 2 information.
+   // instlatx64 samples have steppings 4 & 5, but no idea which stepping names
+   // those are.
+   FMS (    0, 6,  2,14,  6,     "Intel Xeon Processor 6500 / 7500 (Beckton D0)");
+   FM  (    0, 6,  2,14,         "Intel Xeon Processor 6500 / 7500 (Beckton)");
+   // Intel docs (325122).
    FMS (    0, 6,  2,15,  2,     "Intel Xeon E7-8800 / Xeon E7-4800 / Xeon E7-2800 (Westmere-EX A2)");
    FM  (    0, 6,  2,15,         "Intel Xeon (unknown type) (Westmere-EX)");
+   // Intel docs (332067) omit stepping numbers for D1, but (328105) provide
+   // some.
    FMS (    0, 6,  3, 5,  1,     "Intel Atom Z2760 (Clover Trail C0) / Z8000 (Cherry Trail C0)");
    FM  (    0, 6,  3, 5,         "Intel Atom Z2760 (Clover Trail) / Z8000 (Cherry Trail)");
+   // Intel docs (326140) for Cedarview
    // Intel docs (328198) do not provide any FMS for Centerton, but an example
    // from jhladky@redhat.com does.
-   FMS (    0, 6,  3, 6,  1,     "Intel Atom D2000/N2000 (Cedar Trail B1/B2/B3) / S1200 (Centerton B1)");
-   FM  (    0, 6,  3, 6,         "Intel Atom D2000/N2000 (Cedar Trail) / S1200 (Centerton B1)");
+   // instlatx64 has example with stepping 9, but no idea what stepping name
+   // that is.
+   FMS (    0, 6,  3, 6,  1,     "Intel Atom D2000/N2000 (Cedarview B1/B2/B3) / S1200 (Centerton B1)");
+   FM  (    0, 6,  3, 6,         "Intel Atom D2000/N2000 (Cedarview) / S1200 (Centerton)");
+   // Intel docs (329475, 329671, 329901, 600827).
    FMS (    0, 6,  3, 7,  1,     "Intel Atom Z3000 (Bay Trail-T A0)");
-   FMS (    0, 6,  3, 7,  2,     "Intel Pentium / Celeron (Bay Trail-M B0/B1)");
-   FMS (    0, 6,  3, 7,  3,     "Intel Pentium N3500 / J2850 / Celeron N1700 / N1800 / N2800 / N2900 (Bay Trail-M B2/B3) / Atom E3800 (Bay Trail-I B3)");
+   FMSQ(    0, 6,  3, 7,  2, dC, "Intel Celeron N2800 / N2900 (Bay Trail-M B0/B1)");
+   FMSQ(    0, 6,  3, 7,  2, dP, "Intel Pentium N3500 / J2800 / J2900 (Bay Trail-M B0/B1)");
+   FMS (    0, 6,  3, 7,  2,     "Intel Atom (unknown type) (Bay Trail-M B0/B1)");
+   FMSQ(    0, 6,  3, 7,  3, dC, "Intel Celeron N1700 / N1800 / N2800 / N2900 / J1700 / J1800 / J1900 (Bay Trail-M B2/B3)");
+   FMSQ(    0, 6,  3, 7,  3, dP, "Intel Pentium N3500 / J2800 / J2900 (Bay Trail-M B2/B3) / Atom E3800 (Bay Trail-I B3)");
+   FMSQ(    0, 6,  3, 7,  3, da, "Intel Atom E3800 / Z3700 (Bay Trail-I B3)"); // Z3700 only from MRG* 2019-08-31
+   FMS (    0, 6,  3, 7,  3,     "Intel Atom (unknown type) (Bay Trail B2/B3)");
    FMSQ(    0, 6,  3, 7,  4, dC, "Intel Celeron N2800 / N2900 (Bay Trail-M C0)");
-   FMSQ(    0, 6,  3, 7,  4, dP, "Intel Pentium N3500 (Bay Trail-M C0)");
-   FMS (    0, 6,  3, 7,  4,     "Intel (unknown type) (Bay Trail-M C0 / Bay Trail-T B2/B3)");
-   FMS (    0, 6,  3, 7,  9,     "Intel Atom E3800 (Bay Trail-I D0)");
-   FM  (    0, 6,  3, 7,         "Intel (unknown type) (Bay Trail-M / Bay Trail-T / Bay Trail-I)");
+   FMSQ(    0, 6,  3, 7,  4, dP, "Intel Pentium N3500 / J2800 / J2900 (Bay Trail-M C0)");
+   FMS (    0, 6,  3, 7,  4,     "Intel Atom (unknown type) (Bay Trail-M C0 / Bay Trail-T B2/B3)");
+   FMSQ(    0, 6,  3, 7,  8, da, "Intel Atom Z3700 (Bay Trail)"); // only MRG* 2019-08-31 (unknown stepping name)
+   FMSQ(    0, 6,  3, 7,  8, dC, "Intel Celeron N2800 / N2900 (Bay Trail)"); // only MRG* 2019-08-31 (unknown stepping name)
+   FMSQ(    0, 6,  3, 7,  8, dP, "Intel Pentium N3500 (Bay Trail)"); // only MRG* 2019-08-31 (unknown stepping name)
+   FMS (    0, 6,  3, 7,  8,     "Intel Atom (unknown type) (Bay Trail)"); // only MRG* 2019-08-31 (unknown stepping name)
+   FMSQ(    0, 6,  3, 7,  9, da, "Intel Atom E3800 (Bay Trail-I D0)");
+   FMSQ(    0, 6,  3, 7,  9, dC, "Intel Celeron N2800 / N2900 (Bay Trail-M/D D0/D1)"); // only MRG* 2018-03-06
+   FMSQ(    0, 6,  3, 7,  9, dP, "Intel Pentium J1800 / J1900 (Bay Trail-M/D D0/D1)"); // only MRG* 2018-03-06
+   FMS (    0, 6,  3, 7,  9,     "Intel Atom (unknown type) (Bay Trail D0)");
+   FM  (    0, 6,  3, 7,         "Intel Atom (unknown type) (Bay Trail-M / Bay Trail-T / Bay Trail-I)");
+   // Intel docs (326766, 326770, 326774, 329376).
+   // How to differentiate Gladden from Ivy Bridge here?
    FMSQ(    0, 6,  3,10,  9, Mc, "Intel Mobile Core i*-3000 (Ivy Bridge E1/L1) / Pentium 900/1000/2000/2100 (P0)");
    FMSQ(    0, 6,  3,10,  9, dc, "Intel Core i*-3000 (Ivy Bridge E1/N0/L1)");
    FMSQ(    0, 6,  3,10,  9, sX, "Intel Xeon E3-1100 v2 / E3-1200 v2 (Ivy Bridge E1/N0/L1)");
-   FMSQ(    0, 6,  3,10,  9, dP, "Intel Pentium G1600/G2000/G2100 / Pentium B925C (Ivy Bridge P0)");
+   FMSQ(    0, 6,  3,10,  9, dC, "Intel Celeron 1000 / G1600 (Ivy Bridge P0)"); // only MRG 2019-08-31
+   FMSQ(    0, 6,  3,10,  9, dP, "Intel Pentium G1600/G2000/G2100 / Pentium B900C (Ivy Bridge P0)");
    FMS (    0, 6,  3,10,  9,     "Intel Core (unknown type) (Ivy Bridge E1/N0/L1/P0)");
    FMQ (    0, 6,  3,10,     Mc, "Intel Mobile Core i*-3000 (Ivy Bridge) / Pentium 900/1000/2000/2100");
    FMQ (    0, 6,  3,10,     dc, "Intel Core i*-3000 (Ivy Bridge)");
    FMQ (    0, 6,  3,10,     sX, "Intel Xeon E3-1100 v2 / E3-1200 v2 (Ivy Bridge)");
-   FMQ (    0, 6,  3,10,     dP, "Intel Pentium G1600/G2000/G2100 / Pentium B925C (Ivy Bridge)");
+   FMQ (    0, 6,  3,10,     dC, "Intel Celeron 1000 / G1600 (Ivy Bridge)"); // only MRG 2019-08-31
+   FMQ (    0, 6,  3,10,     dP, "Intel Pentium G1600/G2000/G2100 / Pentium B900C (Ivy Bridge)");
    FM  (    0, 6,  3,10,         "Intel Core (unknown type) (Ivy Bridge)");
    // Intel docs (328899, 328903, 328908) omit the stepping numbers for (0,6),(3,12) C0 & D0.
+   // MRG* 2018-03-06 mentions (0,6),(3,12),3, but doesn't specify which stepping name it is.
+   // Coreboot* identifies the steppings.
+   FMSQ(    0, 6,  3,12,  1, sX, "Intel Xeon E3-1200 v3 (Haswell A0)");
+   FMSQ(    0, 6,  3,12,  1, Mc, "Intel Mobile Core i*-4000U (Mobile M) (Haswell A0)");
+   FMSQ(    0, 6,  3,12,  1, dc, "Intel Core i*-4000 / Mobile Core i*-4000 (Haswell A0)");
+   FMSQ(    0, 6,  3,12,  1, MC, "Intel Mobile Celeron 2900U (Mobile M) (Haswell A0)");
+   FMSQ(    0, 6,  3,12,  1, dC, "Intel Celeron G1800 / G2000 (Haswell A0)"); // G2000 only from MRG* 2019-08-31
+   FMSQ(    0, 6,  3,12,  1, MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile M) (Haswell A0)");
+   FMSQ(    0, 6,  3,12,  1, dP, "Intel Pentium G3000 (Haswell A0)");
+   FMS (    0, 6,  3,12,  1,     "Intel Core (unknown type) (Haswell A0)");
+   FMSQ(    0, 6,  3,12,  2, sX, "Intel Xeon E3-1200 v3 (Haswell B0)");
+   FMSQ(    0, 6,  3,12,  2, Mc, "Intel Mobile Core i*-4000U (Mobile M) (Haswell B0)");
+   FMSQ(    0, 6,  3,12,  2, dc, "Intel Core i*-4000 / Mobile Core i*-4000 (Haswell B0)");
+   FMSQ(    0, 6,  3,12,  2, MC, "Intel Mobile Celeron 2900U (Mobile M) (Haswell B0)");
+   FMSQ(    0, 6,  3,12,  2, dC, "Intel Celeron G1800 / G2000 (Haswell B0)"); // G2000 only from MRG* 2019-08-31
+   FMSQ(    0, 6,  3,12,  2, MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile M) (Haswell B0)");
+   FMSQ(    0, 6,  3,12,  2, dP, "Intel Pentium G3000 (Haswell B0)");
+   FMS (    0, 6,  3,12,  2,     "Intel Core (unknown type) (Haswell B0)");
+   FMSQ(    0, 6,  3,12,  3, sX, "Intel Xeon E3-1200 v3 (Haswell C0)");
+   FMSQ(    0, 6,  3,12,  3, Mc, "Intel Mobile Core i*-4000U (Mobile M) (Haswell C0)");
+   FMSQ(    0, 6,  3,12,  3, dc, "Intel Core i*-4000 / Mobile Core i*-4000 (Haswell C0)");
+   FMSQ(    0, 6,  3,12,  3, MC, "Intel Mobile Celeron 2900U (Mobile M) (Haswell C0)");
+   FMSQ(    0, 6,  3,12,  3, dC, "Intel Celeron G1800 / G2000 (Haswell C0)"); // G2000 only from MRG* 2019-08-31
+   FMSQ(    0, 6,  3,12,  3, MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile M) (Haswell C0)");
+   FMSQ(    0, 6,  3,12,  3, dP, "Intel Pentium G3000 (Haswell C0)");
+   FMS (    0, 6,  3,12,  3,     "Intel Core (unknown type) (Haswell C0)");
    FMQ (    0, 6,  3,12,     sX, "Intel Xeon E3-1200 v3 (Haswell)");
    FMQ (    0, 6,  3,12,     Mc, "Intel Mobile Core i*-4000U (Mobile M) (Haswell)");
-   FMQ (    0, 6,  3,12,     dc, "Intel Core i*-4000 / / Mobile Core i*-4000 (Haswell)");
+   FMQ (    0, 6,  3,12,     dc, "Intel Core i*-4000 / Mobile Core i*-4000 (Haswell)");
    FMQ (    0, 6,  3,12,     MC, "Intel Mobile Celeron 2900U (Mobile M) (Haswell)");
-   FMQ (    0, 6,  3,12,     dC, "Intel Celeron G1800 (Haswell)");
+   FMQ (    0, 6,  3,12,     dC, "Intel Celeron G1800 / G2000 (Haswell)"); // G2000 only from MRG* 2019-08-31
    FMQ (    0, 6,  3,12,     MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile M) (Haswell)");
    FMQ (    0, 6,  3,12,     dP, "Intel Pentium G3000 (Haswell)");
    FM  (    0, 6,  3,12,         "Intel Core (unknown type) (Haswell)");
    // Intel docs (330836) omit the stepping numbers for (0,6),(3,13) E0 & F0.
-   FMQ (    0, 6,  3,13,     dc, "Intel Core i*-5000 / Core M (Broadwell)");
-   FMQ (    0, 6,  3,13,     MC, "Intel Mobile Celeron 3000 (Broadwell)");
-   FMQ (    0, 6,  3,13,     dC, "Intel Celeron 3000 (Broadwell)");
-   FM  (    0, 6,  3,13,         "Intel Core (unknown type) (Broadwell)");
+   // MRG* 2019-08-31 mentions stepping 4, but doesn't specify which stepping name it is.
+   // Coreboot* identifies the steppings.
+   FMSQ(    0, 6,  3,13,  2, dc, "Intel Core i*-5000 (Broadwell-U C0) / Core M (Broadwell-Y C0)");
+   FMSQ(    0, 6,  3,13,  2, MC, "Intel Mobile Celeron 3000 (Broadwell-U C0)");
+   FMSQ(    0, 6,  3,13,  2, dC, "Intel Celeron 3000 (Broadwell-U C0)");
+   FMSQ(    0, 6,  3,13,  2, dP, "Intel Pentium 3700U / 3800U / 3200U (Broadwell-U C0)"); // only MRG* 2018-03-06, 2019-08-31
+   FMS (    0, 6,  3,13,  2,     "Intel Core (unknown type) (Broadwell-U/Y C0)");
+   FMSQ(    0, 6,  3,13,  3, dc, "Intel Core i*-5000 (Broadwell-U D0) / Core M (Broadwell-Y D0)");
+   FMSQ(    0, 6,  3,13,  3, MC, "Intel Mobile Celeron 3000 (Broadwell-U D0)");
+   FMSQ(    0, 6,  3,13,  3, dC, "Intel Celeron 3000 (Broadwell-U D0)");
+   FMSQ(    0, 6,  3,13,  3, dP, "Intel Pentium 3700U / 3800U / 3200U (Broadwell-U D0)"); // only MRG* 2018-03-06, 2019-08-31
+   FMS (    0, 6,  3,13,  3,     "Intel Core (unknown type) (Broadwell-U/Y D0)");
+   FMSQ(    0, 6,  3,13,  4, dc, "Intel Core i*-5000 (Broadwell-U E0) / Core M (Broadwell-Y E0)");
+   FMSQ(    0, 6,  3,13,  4, MC, "Intel Mobile Celeron 3000 (Broadwell-U E0)");
+   FMSQ(    0, 6,  3,13,  4, dC, "Intel Celeron 3000 (Broadwell-U E0)");
+   FMSQ(    0, 6,  3,13,  4, dP, "Intel Pentium 3700U / 3800U / 3200U (Broadwell-U E0)"); // only MRG* 2018-03-06, 2019-08-31
+   FMS (    0, 6,  3,13,  4,     "Intel Core (unknown type) (Broadwell-U/Y E0)");
+   FMQ (    0, 6,  3,13,     dc, "Intel Core i*-5000 (Broadwell-U) / Core M (Broadwell-Y)");
+   FMQ (    0, 6,  3,13,     MC, "Intel Mobile Celeron 3000 (Broadwell-U)");
+   FMQ (    0, 6,  3,13,     dC, "Intel Celeron 3000 (Broadwell-U)");
+   FMQ (    0, 6,  3,13,     dP, "Intel Pentium 3700U / 3800U / 3200U (Broadwell-U)"); // only MRG* 2018-03-06, 2019-08-31
+   FM  (    0, 6,  3,13,         "Intel Core (unknown type) (Broadwell-U/Y)");
+   // Intel docs (329189, 329368, 329597).
    FMSQ(    0, 6,  3,14,  4, sX, "Intel Xeon E5-1600/E5-2600 v2 (Ivy Bridge-EP C1/M1/S1)");
-   FMSQ(    0, 6,  3,14,  4, dc, "Intel Core i7-4000 / i9-4000 (Ivy Bridge-EP S1)");
+   FMSQ(    0, 6,  3,14,  4, dc, "Intel Core i*-4000 (Ivy Bridge-E S1)");
    FMS (    0, 6,  3,14,  4,     "Intel Core (unknown type) (Ivy Bridge-EP C1/M1/S1)");
-   FMSQ(    0, 6,  3,14,  7, sX, "Intel Xeon E7 v2 (Ivy Bridge-EX D1)");
+   FMSQ(    0, 6,  3,14,  7, sX, "Intel Xeon E5-4600 / E7-2800 / E7-4800 / E7-8800 v2 (Ivy Bridge-EX D1)"); // E5-4600 names from MRG* 2018-03-06, 2019-08-31
    FMS (    0, 6,  3,14,  7,     "Intel Xeon (unknown type) (Ivy Bridge-EX D1)");
-   FMQ (    0, 6,  3,14,     sX, "Intel Xeon E5-1600/E5-2600 v2 (Ivy Bridge-EP) / Xeon E7 (Ivy Bridge-EX)");
-   FMQ (    0, 6,  3,14,     dc, "Intel Core i9-4000 (Ivy Bridge-EP)");
-   FM  (    0, 6,  3,14,         "Intel Core (unknown type) (Ivy Bridge-EP / Ivy Bridge-EX");
-   FMS (    0, 6,  3,15,  2,     "Intel Core i7-5000 Extreme Edition (Haswell R2) / Xeon E5-x600 v3 (Haswell-EP C1/M1/R2)");
+   FMQ (    0, 6,  3,14,     sX, "Intel Xeon E5-1600 / E5-2600 v2 (Ivy Bridge-EP) / Xeon E5-4600 / E7-2800 / E7-4800 / E7-8800 (Ivy Bridge-EX)");
+   FMQ (    0, 6,  3,14,     dc, "Intel Core i9-4000 (Ivy Bridge-E)");
+   FM  (    0, 6,  3,14,         "Intel Core (unknown type) (Ivy Bridge-E / Ivy Bridge-EP / Ivy Bridge-EX)");
+   // Intel docs (330785, 330841, 332317).
+   FMSQ(    0, 6,  3,15,  2, dc, "Intel Core i7-5000 Extreme Edition (Haswell-E R2)");
+   FMSQ(    0, 6,  3,15,  2, sX, "Intel Xeon E5-x600 v3 (Haswell-EP C1/M1/R2)");
+   FMS (    0, 6,  3,15,  2,     "Intel (unknown type) (Haswell C1/M1/R2)");
    FMS (    0, 6,  3,15,  4,     "Intel Xeon E7-4800 / E7-8800 v3 (Haswell-EP E0)");
    FM  (    0, 6,  3,15,         "Intel Core (unknown type) (Haswell R2 / Haswell-EP)");
    // Intel docs (328903) omit the stepping numbers for (0,6),(4,5) C0 & D0.
-   FMQ (    0, 6,  4, 5,     dc, "Intel Core i*-4000U (Haswell)"); // no docs, but example from Brice Goglin
-   FMQ (    0, 6,  4, 5,     Mc, "Intel Mobile Core i*-4000Y (Mobile U/Y) (Haswell)");
-   FMQ (    0, 6,  4, 5,     MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile U/Y) (Haswell)");
-   FMQ (    0, 6,  4, 5,     MC, "Intel Mobile Celeron 2900U (Mobile U/Y) (Haswell)");
-   FM  (    0, 6,  4, 5,         "Intel Core (unknown type) (Haswell)");
+   // MRG* 2019-08-31 mentions stepping 1, but doesn't specify which stepping name it is.
+   // Coreboot* identifies the 0 stepping as B0, but not what the 1 stepping is.
+   FMSQ(    0, 6,  4, 5,  0, dc, "Intel Core i*-4000U (Haswell-ULT B0)"); // no docs, but example from Brice Goglin
+   FMSQ(    0, 6,  4, 5,  0, Mc, "Intel Mobile Core i*-4000Y (Mobile U/Y) (Haswell-ULT B0)");
+   FMSQ(    0, 6,  4, 5,  0, MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile U/Y) (Haswell-ULT B0)");
+   FMSQ(    0, 6,  4, 5,  0, MC, "Intel Mobile Celeron 2900U (Mobile U/Y) (Haswell-ULT B0)");
+   FMS (    0, 6,  4, 5,  0,     "Intel Core (unknown type) (Haswell-ULT B0)");
+   FMQ (    0, 6,  4, 5,     dc, "Intel Core i*-4000U (Haswell-ULT)"); // no docs, but example from Brice Goglin
+   FMQ (    0, 6,  4, 5,     Mc, "Intel Mobile Core i*-4000Y (Mobile U/Y) (Haswell-ULT)");
+   FMQ (    0, 6,  4, 5,     MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile U/Y) (Haswell-ULT)");
+   FMQ (    0, 6,  4, 5,     MC, "Intel Mobile Celeron 2900U (Mobile U/Y) (Haswell-ULT)");
+   FM  (    0, 6,  4, 5,         "Intel Core (unknown type) (Haswell-ULT)");
    // Intel docs (328899,328903) omit the stepping numbers for (0,6),(4,6) C0 & D0.
-   FMQ (    0, 6,  4, 6,     Mc, "Intel Mobile Core i*-4000Y (Mobile H) (Haswell)");
-   FMQ (    0, 6,  4, 6,     dc, "Intel Core i* / Mobile Core i* (Desktop R) (Haswell)");
-   FMQ (    0, 6,  4, 6,     MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile H) (Haswell)");
-   FMQ (    0, 6,  4, 6,     dC, "Intel Celeron G1800 (Desktop R) (Haswell)");
-   FMQ (    0, 6,  4, 6,     MC, "Intel Mobile Celeron 2900U (Mobile H) (Haswell)");
-   FMQ (    0, 6,  4, 6,     dP, "Intel Pentium G3000 (Desktop R) (Haswell)");
-   FM  (    0, 6,  4, 6,         "Intel Core (unknown type) (Haswell)");
+   // MRG* mentions (0,6),(4,6),1, but doesn't specify which stepping name it is.
+   FMQ (    0, 6,  4, 6,     Mc, "Intel Mobile Core i*-4000Y (Mobile H) (Crystal Well)");
+   FMQ (    0, 6,  4, 6,     dc, "Intel Core i*-4000 / Mobile Core i*-4000 (Desktop R) (Crystal Well)");
+   FMQ (    0, 6,  4, 6,     MP, "Intel Mobile Pentium 3500U / 3600U / 3500Y (Mobile H) (Crystal Well)");
+   FMQ (    0, 6,  4, 6,     dC, "Intel Celeron G1800 (Desktop R) (Crystal Well)");
+   FMQ (    0, 6,  4, 6,     MC, "Intel Mobile Celeron 2900U (Mobile H) (Crystal Well)");
+   FMQ (    0, 6,  4, 6,     dP, "Intel Pentium G3000 (Desktop R) (Crystal Well)");
+   FM  (    0, 6,  4, 6,         "Intel Core (unknown type) (Crystal Well)");
    // So far, all these (0,6),(4,7) processors are stepping G0, but the
    // Intel docs (332381, 332382) omit the stepping number for G0.
+   // MRG* 2018-03-06 describes Broadwell H 43e.
+   FMSQ(    0, 6,  4, 7,  1, dc, "Intel Core i*-5000 (Broadwell G0)");
+   FMSQ(    0, 6,  4, 7,  1, Mc, "Intel Mobile Core i7-5000 (Broadwell G0)");
+   FMSQ(    0, 6,  4, 7,  1, sX, "Intel Xeon E3-1200 v4 (Broadwell G0)");
+   FMS (    0, 6,  4, 7,  1,     "Intel (unknown type) (Broadwell-H G0)");
    FMQ (    0, 6,  4, 7,     dc, "Intel Core i7-5000 (Broadwell)");
    FMQ (    0, 6,  4, 7,     Mc, "Intel Mobile Core i7-5000 (Broadwell)");
    FMQ (    0, 6,  4, 7,     sX, "Intel Xeon E3-1200 v4 (Broadwell)");
    FM  (    0, 6,  4, 7,         "Intel Core (unknown type) (Broadwell)");
-   FM  (    0, 6,  4,10,         "Intel Atom Z3400 (Merrifield)"); // no spec update; only MSR_CPUID_table* so far
-   // The (0,6),(4,12) processors also have a D1 stepping, but the
-   // Intel docs (332095) omit the stepping number.
-   FMS (    0, 6,  4,12,  0,     "Intel Pentium N3000 / Celeron N3000 (Braswell C0)");
-   FM  (    0, 6,  4,12,         "Intel Pentium N3000 / Celeron N3000 (Braswell)");
+   // no spec update; only MSR_CPUID_table* so far
+   // MRG* 2018-03-06 mentions steppings 8 and 9, but without names for either.
+   FM  (    0, 6,  4,10,         "Intel Atom Z3400 (Merrifield)");
+   // Intel docs (332095).
+   FMSQ(    0, 6,  4,12,  3, dC, "Intel Celeron N3000 / J3000 (Braswell C0)");
+   FMSQ(    0, 6,  4,12,  3, dP, "Intel Pentium N3000 / J3000 (Braswell C0)");
+   FMSQ(    0, 6,  4,12,  3, da, "Intel Atom x5-E8000 / x*-Z8000 (Cherry Trail C0)"); // no spec update; only MRG* 2018-03-06, 2019-08-31
+   FMS (    0, 6,  4,12,  3,     "Intel Atom (unknown type) (Braswell/Cherry Trail C0)");
+   FMSQ(    0, 6,  4,12,  4, dC, "Intel Celeron N3000 / J3000 (Braswell D1)");
+   FMSQ(    0, 6,  4,12,  4, dP, "Intel Pentium N3000 / J3000 (Braswell D1)");
+   FMSQ(    0, 6,  4,12,  4, da, "Intel Atom x5-E8000 / x*-Z8000 (Cherry Trail D1)"); // no spec update; only MRG* 2018-03-06, 2019-08-31
+   FMS (    0, 6,  4,12,  4,     "Intel Atom (unknown type) (Braswell/Cherry Trail D1)");
+   FMQ (    0, 6,  4,12,     dC, "Intel Celeron N3000 / J3000 (Braswell)");
+   FMQ (    0, 6,  4,12,     dP, "Intel Pentium N3000 / J3000 (Braswell)");
+   FMQ (    0, 6,  4,12,     da, "Intel Atom x5-E8000 / x*-Z8000 (Cherry Trail)"); // no spec update; only MRG* 2018-03-06, 2019-08-31
+   FM  (    0, 6,  4,12,         "Intel Atom (unknown type) (Braswell/Cherry Trail)");
+   // Intel docs (329460, 330061).
    FMS (    0, 6,  4,13,  0,     "Intel Atom C2000 (Avoton A0/A1)");
-   FMS (    0, 6,  4,13,  8,     "Intel Atom C2000 (Avoton B0/C0)");
+   FMS (    0, 6,  4,13,  8,     "Intel Atom C2000 (Avoton/Rangeley B0/C0)");
    FM  (    0, 6,  4,13,         "Intel Atom C2000 (Avoton)");
    // Intel docs (332689) omit the stepping numbers for (0,6),(4,14) D1 & K1.
+   // MRG* 2018-03-06 mentions (0,6),(4,14),3, but doesn't specify which
+   // stepping name it is.
+   // Coreboot* identifies the 2 (C0) & 3 (D0) steppings, neither of which is
+   // mentioned in (332689).
+   // Coreboot* identifies stepping 8 as (Kaby Lake G0). Perhaps they were just
+   // early engineering samples of Kaby Lake.
+   FMSQ(    0, 6,  4,14,  2, dc, "Intel Core i*-6000U / m*-6Y00 (Skylake C0)");
+   FMSQ(    0, 6,  4,14,  2, dP, "Intel Pentium 4405U / Pentium 4405Y (Skylake C0)");
+   FMSQ(    0, 6,  4,14,  2, dC, "Intel Celeron 3800U / 39000U (Skylake C0)");
+   FMSQ(    0, 6,  4,14,  2, sX, "Intel Xeon E3-1500m (Skylake C0)"); // no spec update; only MSR_CPUID_table* so far
+   FMS (    0, 6,  4,14,  2,     "Intel Core (unknown type) (Skylake C0)");
+   FMSQ(    0, 6,  4,14,  3, dc, "Intel Core i*-6000U / m*-6Y00 (Skylake D0)");
+   FMSQ(    0, 6,  4,14,  3, dP, "Intel Pentium 4405U / Pentium 4405Y (Skylake D0)");
+   FMSQ(    0, 6,  4,14,  3, dC, "Intel Celeron 3800U / 39000U (Skylake D0)");
+   FMSQ(    0, 6,  4,14,  3, sX, "Intel Xeon E3-1500m (Skylake D0)"); // no spec update; only MSR_CPUID_table* so far
+   FMS (    0, 6,  4,14,  3,     "Intel Core (unknown type) (Skylake D0)");
+   FMS (    0, 6,  4,14,  8,     "Intel Core (unknown type) (Kaby Lake G0)"); // Coreboot*
    FMQ (    0, 6,  4,14,     dc, "Intel Core i*-6000U / m*-6Y00 (Skylake)");
    FMQ (    0, 6,  4,14,     dP, "Intel Pentium 4405U / Pentium 4405Y (Skylake)");
    FMQ (    0, 6,  4,14,     dC, "Intel Celeron 3800U / 39000U (Skylake)");
    FMQ (    0, 6,  4,14,     sX, "Intel Xeon E3-1500m (Skylake)"); // no spec update; only MSR_CPUID_table* so far
    FM  (    0, 6,  4,14,         "Intel Core (unknown type) (Skylake)");
-   // Intel docs (334208,333811) omit the stepping numbers for (0,6),(4,15)
-   // B0, M0 & R0.
+   // Intel docs (333811, 334165) omit the stepping numbers for (0,6),(4,15)
+   // B0, M0 & R0, but (334208) provide some.
+   FMSQ(    0, 6,  4,15,  1, dc, "Intel Core i7-6800K / i7-6900K / i7-6900X (Broadwell-E R0)");
    FMQ (    0, 6,  4,15,     dc, "Intel Core i7-6800K / i7-6900K / i7-6900X (Broadwell-E)");
-   FMSQ(    0, 6,  4,15,  1, sX, "Intel Xeon E5-1600 / E5-2600 / E5-4600 v4 (Broadwell) / E7-4800 / E7-8800 v4 (Broadwell-EX B0)");
-   FMQ (    0, 6,  4,15,     sX, "Intel Xeon E5-1600 / E5-2600 / E5-4600 v4 (Broadwell) / E7-4800 / E7-8800 v4 (Broadwell-EX)");
-   FM  (    0, 6,  4,15,         "Intel Core (unknown type) (Broadwell / Broadwell-E / Broadwell-EX)");
+   FMSQ(    0, 6,  4,15,  1, sX, "Intel Xeon E5-1600 / E5-2600 / E5-4600 v4 (Broadwell-E) / E7-4800 / E7-8800 v4 (Broadwell-EX B0)");
+   FMQ (    0, 6,  4,15,     sX, "Intel Xeon E5-1600 / E5-2600 / E5-4600 v4 (Broadwell-E) / E7-4800 / E7-8800 v4 (Broadwell-EX)");
+   FM  (    0, 6,  4,15,         "Intel Core (unknown type) (Broadwell-E / Broadwell-EX)");
+   // Intel docs (335901) omit almost all details for the Core versions of
+   // (0,6),(5,5), but (336065, 338848, 338854) provides some for Xeons.
+   // MRG* 2019-11-13 mentions stepping 3, but doesn't mention stepping name.
+   // geekbench.com has an "Intel Xeon Gold 6230" example of a stepping 5, but
+   // no stepping name.
    FMSQ(    0, 6,  5, 5,  2, sS, "Intel Scalable Bronze/Silver/Gold/Platinum (Skylake B0/L0)");
    FMSQ(    0, 6,  5, 5,  2, sX, "Intel Xeon W 2000 / D-2100 (Skylake B0/L0)");
    FMSQ(    0, 6,  5, 5,  4, sS, "Intel Scalable Bronze/Silver/Gold/Platinum (Skylake H0/M0/U0)");
-   FMSQ(    0, 6,  5, 5,  4, sX, "Intel Xeon W 2000 (Skylake H0/M0/U0)");
+   FMSQ(    0, 6,  5, 5,  4, sX, "Intel Xeon W 2000 / D-2100 (Skylake H0/M0/U0)"); // D-2100 from MRG* 2018-03-06
+   FMSQ(    0, 6,  5, 5,  4, dc, "Intel Core i9-7000X (Skylake-X H0/M0/U0)"); // only from MRG* 2018-03-06
    FMSQ(    0, 6,  5, 5,  6, sS, "Intel Scalable (2nd Gen) Bronze/Silver/Gold/Platinum (Cascade Lake)"); // no docs, but example from Greg Stewart
    FMSQ(    0, 6,  5, 5,  6, sX, "Intel Xeon W 2000 (Cascade Lake)"); // no docs, but example from Greg Stewart
    FMSQ(    0, 6,  5, 5,  7, dc, "Intel Core i*-10000X (Cascade Lake-X B1/L1/R1)"); // no docs, but instlatx64 example
    FMSQ(    0, 6,  5, 5,  7, sS, "Intel Scalable (2nd Gen) Bronze/Silver/Gold/Platinum (Cascade Lake B1/L1/R1)");
-   FMSQ(    0, 6,  5, 5,  7, sX, "Intel Xeon W 2000 (Cascade Lake B1/L1/R1)");
-   // Intel docs (335901) omit almost all details for the Core versions of
-   // (0,6),(5,5).
-   FMQ (    0, 6,  5, 5,     dc, "Intel Core i*-6000X / i*-7000X (Skylake-X) / i*-10000X (Cascade Lake-X)");
+   FMSQ(    0, 6,  5, 5,  7, sX, "Intel Xeon W 2000 (Cascade Lake-W B1/L1/R1)");
+   FMS (    0, 6,  5, 5, 10,     "Intel (unknown type) (Cooper Lake)");
    FMQ (    0, 6,  5, 5,     sS, "Intel Scalable Bronze/Silver/Gold/Platinum (Skylake / Cascade Lake)");
    FMQ (    0, 6,  5, 5,     sX, "Intel Xeon W 2000 / D-2100 (Skylake / Cascade Lake)");
+   FMQ (    0, 6,  5, 5,     dc, "Intel Core i*-6000X / i*-7000X (Skylake-X) / i*-10000X (Cascade Lake-X)");
    FM  (    0, 6,  5, 5,         "Intel Core (unknown type) (Skylake / Skylake-X / Cascade Lake / Cascade Lake-X)");
+   // Intel docs (332054).
    FMS (    0, 6,  5, 6,  1,     "Intel Xeon D-1500 (Broadwell-DE U0)");
    FMS (    0, 6,  5, 6,  2,     "Intel Xeon D-1500 (Broadwell-DE V1)");
-   FMS (    0, 6,  5, 6,  3,     "Intel Xeon D-1500 (Broadwell-DE V2)");
+   FMS (    0, 6,  5, 6,  3,     "Intel Xeon D-1500 (Broadwell-DE V2/V3)"); // V3 from MRG* 2018-03-06
    FMS (    0, 6,  5, 6,  4,     "Intel Xeon D-1500 (Broadwell-DE Y0)");
    FMS (    0, 6,  5, 6,  5,     "Intel Xeon D-1500N (Broadwell-DE A1)");
    FM  (    0, 6,  5, 6,         "Intel Xeon (unknown type) (Broadwell-DE)");
-   // Intel docs (334646) omit the stepping number for B0.  But as of Jan 2017,
+   // Intel docs (334646) omit the stepping number for B0.  But as of Jan 2020,
    // it is the only stepping, and all examples seen have stepping number 1.
    FMS (    0, 6,  5, 7,  1,     "Intel Xeon Phi x200 (Knights Landing B0)");
    FM  (    0, 6,  5, 7,         "Intel Xeon Phi x200 (Knights Landing)");
-   FM  (    0, 6,  5,10,         "Intel Atom Z3500 (Moorefield)"); // no spec update; only MSR_CPUID_table* so far
-   // Intel docs (334820) omit the stepping numbers for B0 & B1.
-   FMSQ(    0, 6,  5,12,  9, dP, "Intel Pentium N4000 / J4000 (Apollo Lake)");
-   FMSQ(    0, 6,  5,12,  9, dC, "Intel Celeron N3000 / J3000 (Apollo Lake)");
-   FMS (    0, 6,  5,12,  9,     "Intel Atom (unknown type) (Apollo Lake)");
+   FM  (    0, 6,  5,10,         "Intel Atom Z3500 (Moorefield)"); // no spec update; only MSR_CPUID_table* & instlatx64 example so far
+   // Intel docs (334820) & MRG* 2018-03-06
+   // Coreboot* provides stepping 8 (A0).
+   FMS (    0, 6,  5,12,  2,     "Intel Atom T5000 (Apollo Lake)"); // no spec update; only MRG* 2018-03-06
+   FMS (    0, 6,  5,12,  8,     "Intel Atom (unknown type) (Apollo Lake A0)");
+   FMSQ(    0, 6,  5,12,  9, dP, "Intel Pentium N4000 / J4000 (Apollo Lake B0/B1/D0)");
+   FMSQ(    0, 6,  5,12,  9, dC, "Intel Celeron N3000 / J3000 (Apollo Lake B0/B1/D0)");
+   FMSQ(    0, 6,  5,12,  9, da, "Intel Atom x*-E3900 / x*-A3900 (Apollo Lake B0/B1/D0)"); // A3900 only from MRG* 2019-08-31
+   FMS (    0, 6,  5,12,  9,     "Intel Atom (unknown type) (Apollo Lake B0/B1/D0)");
+   FMSQ(    0, 6,  5,12, 10, da, "Intel Atom x*-E3900 (Apollo Lake E0)");
+   FMS (    0, 6,  5,12, 10,     "Intel Atom (unknown type) (Apollo Lake E0)");
    FM  (    0, 6,  5,12,         "Intel Atom (unknown type) (Apollo Lake)"); // no spec update for Atom; only MSR_CPUID_table* so far
-   FM  (    0, 6,  5,13,         "Intel Atom X3-C3000 (SoFIA)"); // no spec update; only MSR_CPUID_table* so far (and instlatx64 example)
+   // No spec update; only MSR_CPUID_table* so far (and instlatx64 example)
+   // MRG* 2018-03-06 mentions (0,6),(5,13),1 stepping, but doesn't mention stepping name.
+   FM  (    0, 6,  5,13,         "Intel Atom x3-C3000 (SoFIA)");
    // Intel docs (332689,333133) omit the stepping numbers for (0,6),(5,14)
    // R0 & S0.
-   FMQ (    0, 6,  5,14,     dc, "Intel Core i*-6000 (Skylake)");
-   FMQ (    0, 6,  5,14,     dP, "Intel Pentium G4000 (Skylake)");
-   FMQ (    0, 6,  5,14,     dC, "Intel Celeron G3900 (Skylake)");
-   FMQ (    0, 6,  5,14,     sX, "Intel Xeon E3-1200 v5 (Skylake)");
-   FM  (    0, 6,  5,14,         "Intel Core (unknown type) (Skylake)");
+   // MRG* 2018-03-06 mentions (0,6),(5,14),3, but doesn't specify which
+   // stepping name it is.
+   // Coreboot* identifies the 1 (Q0) & 3 (R0) steppings, but not the S0
+   // stepping.
+   // Coreboot* identifies stepping 8 as (Kaby Lake-H A0). Perhaps they were just
+   // early engineering samples of Kaby Lake.
+   FMSQ(    0, 6,  5,14,  1, dc, "Intel Core i*-6000 (Skylake-H Q0)");
+   FMSQ(    0, 6,  5,14,  1, dP, "Intel Pentium G4000 (Skylake-H Q0)");
+   FMSQ(    0, 6,  5,14,  1, dC, "Intel Celeron G3900 (Skylake-H Q0)");
+   FMSQ(    0, 6,  5,14,  1, sX, "Intel Xeon E3-1200 / E3-1500 v5 (Skylake-H Q0)"); // E3-1500 only from MRG 2019-08-31
+   FMS (    0, 6,  5,14,  1,     "Intel Core (unknown type) (Skylake-H Q0)");
+   FMSQ(    0, 6,  5,14,  3, dc, "Intel Core i*-6000 (Skylake-H R0)");
+   FMSQ(    0, 6,  5,14,  3, dP, "Intel Pentium G4000 (Skylake-H R0)");
+   FMSQ(    0, 6,  5,14,  3, dC, "Intel Celeron G3900 (Skylake-H R0)");
+   FMSQ(    0, 6,  5,14,  3, sX, "Intel Xeon E3-1200 / E3-1500 v5 (Skylake-H R0)"); // E3-1500 only from MRG 2019-08-31
+   FMS (    0, 6,  5,14,  3,     "Intel Core (unknown type) (Skylake-H R0)");
+   FMS (    0, 6,  4,14,  8,     "Intel Core (unknown type) (Kaby Lake-H A0)"); // Coreboot*
+   FMQ (    0, 6,  5,14,     dc, "Intel Core i*-6000 (Skylake-H)");
+   FMQ (    0, 6,  5,14,     dP, "Intel Pentium G4000 (Skylake-H)");
+   FMQ (    0, 6,  5,14,     dC, "Intel Celeron G3900 (Skylake-H)");
+   FMQ (    0, 6,  5,14,     sX, "Intel Xeon E3-1200 / E3-1500 v5 (Skylake-H)"); // E3-1500 only from MRG 2019-08-31
+   FM  (    0, 6,  5,14,         "Intel Core (unknown type) (Skylake-H)");
+   // Intel docs (336345).
    FMS (    0, 6,  5,15,  0,     "Intel Atom C3000 (Denverton A0/A1)");
    FMS (    0, 6,  5,15,  1,     "Intel Atom C3000 (Denverton B0/B1)");
    FM  (    0, 6,  5,15,         "Intel Atom C3000 (Denverton)");
-   FM  (    0, 6,  6, 6,         "Intel Core (Cannon Lake)"); // no spec update; only MSR_CPUID_table* so far (and instlatx64 example)
+   FM  (    0, 6,  6, 5,         "Intel XMM 7272 (SoFIA)"); // no spec update; only MRG* 2018-03-06, 2019-08-31
+   // no spec update; only MSR_CPUID_table* & instlatx64 example so far
+   // Coreboot* provides the steppings.
+   FMS (    0, 6,  6, 6,  0,     "Intel Core (Cannon Lake A0)");
+   FMS (    0, 6,  6, 6,  1,     "Intel Core (Cannon Lake B0)");
+   FMS (    0, 6,  6, 6,  2,     "Intel Core (Cannon Lake C0)");
+   FMS (    0, 6,  6, 6,  3,     "Intel Core (Cannon Lake D0)");
+   FM  (    0, 6,  6, 6,         "Intel Core (Cannon Lake)");
    FM  (    0, 6,  6,10,         "Intel Core (Ice Lake)"); // no spec update; only MSR_CPUID_table* so far
    FM  (    0, 6,  6,12,         "Intel Core (Ice Lake)"); // no spec update; only MSR_CPUID_table* so far
-   FMSQ(    0, 6,  7,10,  1, dP, "Intel Pentium Silver N5000 / J5000 (Gemini Lake B0/R0)");
-   FMSQ(    0, 6,  7,10,  1, dC, "Intel Celeron N4000 / J4000 (Gemini Lake B0/R0)");
-   FMS (    0, 6,  7,10,  1,     "Intel (unknown type) (Gemini Lake B0/R0)");
+   // No spec update; only MRG* 2018-03-06, 2019-08-31.  It is some sort of Atom,
+   // but no idea which uarch or core.
+   FM  (    0, 6,  6,14,         "Intel Puma 7");
+   // No spec update; only instlatx64 example.
+   FM  (    0, 6,  7, 5,         "Intel Spreadtrum SC9853I-IA");
+   // Intel docs (336562).
+   // MRG* 2019-11-13 mentions stepping 8, but doesn't mention stepping name.
+   // Coreboot* provides steppings 0 (A0) & 8 (R0).
+   FMSQ(    0, 6,  7,10,  0, dP, "Intel Pentium Silver N5000 / J5000 (Gemini Lake A0)");
+   FMSQ(    0, 6,  7,10,  0, dC, "Intel Celeron N4000 / J4000 (Gemini Lake A0)");
+   FMS (    0, 6,  7,10,  0,     "Intel (unknown type) (Gemini Lake A0)");
+   FMSQ(    0, 6,  7,10,  1, dP, "Intel Pentium Silver N5000 / J5000 (Gemini Lake B0)");
+   FMSQ(    0, 6,  7,10,  1, dC, "Intel Celeron N4000 / J4000 (Gemini Lake B0)");
+   FMS (    0, 6,  7,10,  1,     "Intel (unknown type) (Gemini Lake B0)");
+   FMSQ(    0, 6,  7,10,  8, dP, "Intel Pentium Silver N5000 / J5000 (Gemini Lake R0)");
+   FMSQ(    0, 6,  7,10,  8, dC, "Intel Celeron N4000 / J4000 (Gemini Lake R0)");
+   FMS (    0, 6,  7,10,  8,     "Intel (unknown type) (Gemini Lake R0)");
    FMQ (    0, 6,  7,10,     dP, "Intel Pentium Silver N5000 / J5000 (Gemini Lake)");
    FMQ (    0, 6,  7,10,     dC, "Intel Celeron N4000 / J4000 (Gemini Lake)");
    FM  (    0, 6,  7,10,         "Intel (unknown type) (Gemini Lake)");
    FM  (    0, 6,  7,13,         "Intel Core i*-10000 (Ice Lake)"); // no spec update; only MSR_CPUID_table* so far
-   // Currently there are no Ice Lake CPUs for Xeon/Pentium/Celeron
-   FMS (    0, 6,  7,14,  4,     "Intel Core i*-10000 (Ice Lake Y)");
-   FMS (    0, 6,  7,14,  5,     "Intel Core i*-10000 (Ice Lake U)");
-   FM  (    0, 6,  7,14,         "Intel Core i*-10000 (Ice Lake)");
-   FM  (    0, 6,  8, 5,         "Intel Xeon Phi (Knights Mill)"); // no spec update; only MSR_CPUID_table* so far
-   FM  (    0, 6,  8,12,         "Intel Core (Tiger Lake)"); // found only on en.wikichip.org
-   FMSQ(    0, 6,  8,14,  9, LY, "Intel Core i*-8000Y (Amber Lake Y)"); // no spec update; only instlatx64 examples
-   FMSQ(    0, 6,  8,14,  9, dc, "Intel Core i*-8000U / i*-8000Y (Kaby Lake)"); // no docs on stepping; wikipedia
-   FMSQ(    0, 6,  8,14, 10, dc, "Intel Core i*-8000U / i*-8000Y (Kaby Lake)"); // no docs on stepping; wikipedia
+   // Intel docs (341079) provide inconsistent information about stepping
+   // numbers for (0,6),(7,14), and it contradicts actual samples, so I'm
+   // ignoring it.
+   // Currently there are no Ice Lake CPUs for Xeon/Pentium/Celeron.
+   // Coreboot* provides steppings 0 (A0) & 1 (B0), but not for stepping 5,
+   // seen in an instlatx64 sample.
+   FMS (    0, 6,  7,14,  0,     "Intel Core i*-10000 (Ice Lake-U/Y A0)");
+   FMS (    0, 6,  7,14,  1,     "Intel Core i*-10000 (Ice Lake-U/Y B0)");
+   FM  (    0, 6,  7,14,         "Intel Core i*-10000 (Ice Lake-U/Y)");
+   // no spec update; only MSR_CPUID_table* so far
+   // MRG* 2018-03-06 mentions stepping 0, but doesn't specify which stepping name it is.
+   FM  (    0, 6,  8, 5,         "Intel Xeon Phi (Knights Mill)");
+   FM  (    0, 6,  8, 6,         "Intel Atom (Elkhart Lake)");
+   FM  (    0, 6,  8,10,         "Intel Atom"); // no spec update; geekbench.com example
+   // Coreboot* provides stepping.
+   FMS (    0, 6,  8,12,  0,     "Intel Core (Tiger Lake-U A0)");
+   FM  (    0, 6,  8,12,         "Intel Core (Tiger Lake-U)");
+   FM  (    0, 6,  8,13,         "Intel Core (Tiger Lake)"); // LX*
    // Intel docs (334663) omit the stepping numbers for (0,6),(8,14)
-   // H0, J1 & Y0, but (338025) provides some.
-   FMSQ(    0, 6,  8,14, 11, LU, "Intel Core i*-8000U (Whiskey Lake W0)");
-   FMSQ(    0, 6,  8,14, 11, LY, "Intel Core i*-8000Y (Amber Lake W0)");
-   FMSQ(    0, 6,  8,14, 11, dc, "Intel Core (unknown type) (Whiskey Lake W0 / Amber Lake W0)");
-   FMSQ(    0, 6,  8,14, 12, UC, "Intel Core i*-10000U (Comet Lake V1)");
-   FMSQ(    0, 6,  8,14, 12, LU, "Intel Core i*-8000U (Whiskey Lake V0)");
-   FMSQ(    0, 6,  8,14, 12, LY, "Intel Core i*-8000Y (Amber Lake V0)");
-   FMSQ(    0, 6,  8,14, 12, dc, "Intel Core (unknown type) (Whiskey Lake V0 / Amber Lake V0 / Comet Lake V1)");
-   FMSQ(    0, 6,  8,14, 12, dP, "Intel Pentium 6000U (Comet Lake V1)");
-   FMSQ(    0, 6,  8,14, 12, dC, "Intel Celeron 5000U (Comet Lake V1)");
-   FMS (    0, 6,  8,14, 12,     "Intel (unknown type) (Whiskey Lake V0 / Amber Lake V0 / Comet Lake V1)");
-   FMQ (    0, 6,  8,14,     dc, "Intel Core i*-8000U / i*-8000Y / Core i*-10000 / Pentium 6000U / Celeron 5000U (Kaby Lake / Coffee Lake / Whiskey Lake / Amber Lake)");
-   FMQ (    0, 6,  8,14,     dP, "Intel Pentium 4410Y / 4415U /6000U (Kaby Lake / Coffee Lake / Comet Lake");
-   FMQ (    0, 6,  8,14,     dC, "Intel Celeron 3965Y / 3865U / 3965U / 5000U (Kaby Lake / Coffee Lake / Comet Lake)");
-   FM  (    0, 6,  8,14,         "Intel Core (unknown type) (Kaby Lake / Amber Lake / Whiskey Lake / Coffee Lake)");
-   FMSQ(    0, 6,  9,14,  9, dc, "Intel Core i*-7700 / i*-8700 (Kaby Lake)"); // no docs on stepping; only instlatx64 examples
-   // Intel docs (334663) omit the stepping numbers for (0,6),(9,14) B0,
-   // but (337346) provides some.
-   FMSQ(    0, 6,  9,14, 10, LU, "Intel Core i*-8000 / i*-9000 U Line (Coffee Lake D0)");
-   FMSQ(    0, 6,  9,14, 10, dc, "Intel Core i*-8000 / i*-9000 S/H Line (Coffee Lake U0)");
-   FMSQ(    0, 6,  9,14, 11, dc, "Intel Core i*-8000 / i*-9000 S Line (Coffee Lake B0)");
-   FMSQ(    0, 6,  9,14, 12, dc, "Intel Core i*-8000 / i*-9000 S Line (Coffee Lake P0)");
-   FMSQ(    0, 6,  9,14, 13, dc, "Intel Core i*-8000 / i*-9000 H Line (Coffee Lake R0)");
-   FMQ (    0, 6,  9,14,     dc, "Intel Core i*-8000 / i*-9000 (Kaby Lake / Coffee Lake)");
-   FMQ (    0, 6,  9,14,     dC, "Intel Celeron G3930 (Kaby Lake / Coffee Lake)");
-   FMQ (    0, 6,  9,14,     sX, "Intel Xeon E3-1200v6 / E3-1285v5 / E3-15x5Mv6 / E-2100 / E-2200 (Kaby Lake / Coffee Lake)");
+   // H0, J1 & Y0, but (338025, 615213) provide some.
+   // Coreboot* provides the 9 (H0) & 10 (Y0) stepping, but not J1.
+   FMSQ(    0, 6,  8,14,  9, UC, "Intel Celeron 3x65U (Kaby Lake H0)"); // MRG* 2019-08-31 pinned down stepping
+   FMSQ(    0, 6,  8,14,  9, UP, "Intel Celeron 4415U (Kaby Lake H0)"); // MRG* 2019-08-31 pinned down stepping
+   FMSQ(    0, 6,  8,14,  9, YC, "Intel Celeron 3x65Y (Kaby Lake H0)"); // MRG* 2019-08-31 pinned down stepping
+   FMSQ(    0, 6,  8,14,  9, YP, "Intel Celeron 4410Y (Kaby Lake H0)"); // MRG* 2019-08-31 pinned down stepping
+   FMSQ(    0, 6,  8,14,  9, Y8, "Intel i*-8000Y / m*-8000Y (Amber Lake-Y H0)"); // no spec update; only MRG* 2019-08-31 & instlatx64 examples
+   FMSQ(    0, 6,  8,14,  9, LY, "Intel Core i*-7000Y (Kaby Lake H0)"); // no spec update; only MRG* 2019-08-31 & instlatx64 examples
+   FMSQ(    0, 6,  8,14,  9, dc, "Intel Core i*-7000U (Kaby Lake H0)"); // no docs on stepping; MRG* 2018-03-06, 2019-08-31
+   FMSQ(    0, 6,  8,14, 10, dc, "Intel Core i*-8000U (Kaby Lake Y0)"); // no docs on stepping; MRG* 2018-03-06
+   FMSQ(    0, 6,  8,14, 11, LU, "Intel Core i*-8000U (Whiskey Lake-U W0)");
+   FMSQ(    0, 6,  8,14, 11, LY, "Intel Core i*-8000Y (Amber Lake-Y W0)");
+   FMSQ(    0, 6,  8,14, 11, UC, "Intel Celeron 4205U (Whiskey Lake-U W0)");
+   FMSQ(    0, 6,  8,14, 11, UP, "Intel Pentium 5405U (Whiskey Lake-U W0)");
+   FMS (    0, 6,  8,14, 11,     "Intel Core (unknown type) (Whiskey Lake-U W0 / Amber Lake-Y W0)");
+   FMSQ(    0, 6,  8,14, 12, UX, "Intel Core i*-10000U (Comet Lake-U V1)");
+   FMSQ(    0, 6,  8,14, 12, LU, "Intel Core i*-8000U (Whiskey Lake-U V0)");
+   FMSQ(    0, 6,  8,14, 12, LY, "Intel Core i*-8000Y / m*-8000Y / i*-10000Y (Amber Lake-Y V0)"); // m*-8000Y & i*-10000Y from MRG* 2019-11-13
+   FMSQ(    0, 6,  8,14, 12, dP, "Intel Pentium 6000U (Comet Lake-U V1)"); // MRG* 2019-08-31 pinned down stepping
+   FMSQ(    0, 6,  8,14, 12, dC, "Intel Celeron 5000U (Comet Lake-U V1)"); // MRG* 2019-08-31 pinned down stepping
+   FMS (    0, 6,  8,14, 12,     "Intel (unknown type) (Whiskey Lake-U V0 / Comet Lake-U V1)");
+   FM  (    0, 6,  8,14,         "Intel Core (unknown type) (Kaby Lake / Amber Lake-Y / Whiskey Lake-U / Comet Lake-U)");
+   // LX*.  Coreboot* provides stepping.
+   FMS (    0, 6,  9, 6,  0,     "Intel Atom (Elkhart Lake A0)");
+   FM  (    0, 6,  9, 6,         "Intel Atom (Elkhart Lake)");
+   FM  (    0, 6,  9,12,         "Intel Atom (Jasper Lake)"); // LX*
+   FM  (    0, 6,  9,13,         "Intel (unknown model) (Ice Lake NNPI)"); // LX* (is NNPI really part of the core name?)
+   // Intel docs (334663, 335718, 336466, 338014) omit the stepping numbers for
+   // (0,6),(9,14) B0, but (337346) provides some.
+   // Coreboot* provides the 9 (B0) stepping.
+   // WARNING: If adding new steppings here, also update decode_uarch_intel.
+   FMSQ(    0, 6,  9,14,  9, LG, "Intel Core i*-8700 (Kaby Lake-H B0)"); // no docs on stepping; only MRG* 2018-03-06, 2019-08-31
+   FMSQ(    0, 6,  9,14,  9, dc, "Intel Core i*-7700 (Kaby Lake-H B0)"); // no docs on stepping; only MRG* 2018-03-06 & instlatx64 examples
+   FMSQ(    0, 6,  9,14,  9, sX, "Intel Xeon E3-1200 v6 (Kaby Lake-H B0)"); // no docs on stepping; only MRG* 2018-03-06
+   FMSQ(    0, 6,  9,14,  9, dC, "Intel Celeron G3930 (Kaby Lake-H B0)"); // MRG* 2020-01-27 pinned down stepping
+   FMSQ(    0, 6,  9,14, 10, LU, "Intel Core i*-8000 U Line (Coffee Lake D0)");
+   FMSQ(    0, 6,  9,14, 10, dc, "Intel Core i*-8000 S/H Line (Coffee Lake U0)");
+   FMSQ(    0, 6,  9,14, 10, sX, "Intel Xeon E-2100 (Coffee Lake U0)"); // MRG* 2019-08-31
+   FMSQ(    0, 6,  9,14, 11, dc, "Intel Core i*-8000 S Line (Coffee Lake B0)");
+   FMSQ(    0, 6,  9,14, 11, dC, "Intel Celeron G4900 (Coffee Lake B0)"); // no spec update; MRG* 2020-01-27
+   FMSQ(    0, 6,  9,14, 11, dP, "Intel Pentium Gold G5000 (Coffee Lake B0)"); // MRG* 2020-01-27 pinned down stepping
+   FMSQ(    0, 6,  9,14, 12, dc, "Intel Core i*-9000 S Line (Coffee Lake P0)");
+   FMSQ(    0, 6,  9,14, 13, dc, "Intel Core i*-9000 H Line (Coffee Lake R0)");
+   FMSQ(    0, 6,  9,14, 13, sX, "Intel Xeon E-2200 (Coffee Lake R0)"); // no docs on stepping; only MRG 2019-11-13
    FM  (    0, 6,  9,14,         "Intel Core (unknown type) (Kaby Lake / Coffee Lake)");
-   FM  (    0, 6, 10, 6,         "Intel Core i*-10000 (Comet Lake)"); // no spec update; only instlatx64 example
+   // LX*.  Coreboot* provides more detail & steppings
+   FMS (    0, 6, 10, 5,  0,     "Intel (unknown model) (Comet Lake-H/S G0)");
+   FMS (    0, 6, 10, 5,  1,     "Intel (unknown model) (Comet Lake-H/S P0)");
+   FMS (    0, 6, 10, 5,  3,     "Intel (unknown model) (Comet Lake-H/S G1)");
+   FMS (    0, 6, 10, 5,  4,     "Intel (unknown model) (Comet Lake-H/S Q0/P1)");
+   FM  (    0, 6, 10, 5,         "Intel (unknown model) (Comet Lake-H/S)");
+   // MRG* 2019-11-13 & instlatx64 example
+   // Coreboot* provides steppings.
+   FMS (    0, 6, 10, 6,  0,     "Intel Core i*-10000 (Comet Lake A0)");
+   FMS (    0, 6, 10, 6,  1,     "Intel Core i*-10000 (Comet Lake K0/S0)");
+   FM  (    0, 6, 10, 6,         "Intel Core i*-10000 (Comet Lake)");
    FQ  (    0, 6,            sX, "Intel Xeon (unknown model)");
    FQ  (    0, 6,            se, "Intel Xeon (unknown model)");
    FQ  (    0, 6,            MC, "Intel Mobile Celeron (unknown model)");
@@ -2970,15 +3320,18 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FQ  (    0, 6,            MP, "Intel Mobile Pentium (unknown model)");
    FQ  (    0, 6,            dP, "Intel Pentium (unknown model)");
    F   (    0, 6,                "Intel (unknown model)");
-   FMS (    0, 7,  0, 6,  4,     "Intel Itanium (Merced C0)");
-   FMS (    0, 7,  0, 7,  4,     "Intel Itanium (Merced C1)");
-   FMS (    0, 7,  0, 8,  4,     "Intel Itanium (Merced C2)");
+   // Intel docs (249720).
+   FMS (    0, 7,  0, 0,  6,     "Intel Itanium (Merced C0)");
+   FMS (    0, 7,  0, 0,  7,     "Intel Itanium (Merced C1)");
+   FMS (    0, 7,  0, 0,  8,     "Intel Itanium (Merced C2)");
    F   (    0, 7,                "Intel Itanium (unknown model)");
    FM  (    0,11,  0, 0,         "Intel Xeon Phi x100 Coprocessor (Knights Ferry)"); // found only on en.wikichip.org
+   // Intel docs (328205).
    FMS (    0,11,  0, 1,  1,     "Intel Xeon Phi x100 Coprocessor (Knights Corner B0)");
    FMS (    0,11,  0, 1,  3,     "Intel Xeon Phi x100 Coprocessor (Knights Corner B1)");
    FMS (    0,11,  0, 1,  4,     "Intel Xeon Phi x100 Coprocessor (Knights Corner C0)");
    FM  (    0,11,  0, 1,         "Intel Xeon Phi x100 Coprocessor (Knights Corner)");
+   // Intel docs (249199, 249678).
    FMS (    0,15,  0, 0,  7,     "Intel Pentium 4 (Willamette B2)");
    FMSQ(    0,15,  0, 0, 10, dP, "Intel Pentium 4 (Willamette C1)");
    FMSQ(    0,15,  0, 0, 10, sX, "Intel Xeon (Foster C1)");
@@ -2986,6 +3339,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0,15,  0, 0,     dP, "Intel Pentium 4 (Willamette)");
    FMQ (    0,15,  0, 0,     sX, "Intel Xeon (Foster)");
    FM  (    0,15,  0, 0,         "Intel Pentium 4 (unknown type) (Willamette/Foster)");
+   // Intel docs (249199, 249678, 290741, 290749).
    FMS (    0,15,  0, 1,  1,     "Intel Xeon MP (Foster C0)");
    FMSQ(    0,15,  0, 1,  2, dP, "Intel Pentium 4 (Willamette D0)");
    FMSQ(    0,15,  0, 1,  2, sX, "Intel Xeon (Foster D0)");
@@ -2996,6 +3350,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0,15,  0, 1,     dP, "Intel Pentium 4 (Willamette)");
    FMQ (    0,15,  0, 1,     sX, "Intel Xeon (Foster)");
    FM  (    0,15,  0, 1,         "Intel Pentium 4 (unknown type) (Willamette/Foster)");
+   // Intel docs (249199, 249678, 250721, 251309, 253176, 290741, 290749).
    FMS (    0,15,  0, 2,  2,     "Intel Xeon MP (Gallatin A0)");
    FMSQ(    0,15,  0, 2,  4, sX, "Intel Xeon (Prestonia B0)");
    FMSQ(    0,15,  0, 2,  4, MM, "Intel Mobile Pentium 4 Processor-M (Northwood B0)");
@@ -3024,6 +3379,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0,15,  0, 2,     sM, "Intel Xeon MP (Gallatin)");
    FMQ (    0,15,  0, 2,     sX, "Intel Xeon (Prestonia)");
    FM  (    0,15,  0, 2,         "Intel Pentium 4 (unknown type) (Northwood/Prestonia/Gallatin)");
+   // Intel docs (302352, 302402, 302403, 302441).
    FMSQ(    0,15,  0, 3,  3, dP, "Intel Pentium 4 (Prescott C0)");
    FMSQ(    0,15,  0, 3,  3, dC, "Intel Celeron D (Prescott C0)");
    FMS (    0,15,  0, 3,  3,     "Intel Pentium 4 (unknown type) (Prescott C0)");
@@ -3037,6 +3393,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0,15,  0, 3,     MP, "Intel Mobile Pentium 4 (Prescott)");
    FMQ (    0,15,  0, 3,     dP, "Intel Pentium 4 (Prescott)");
    FM  (    0,15,  0, 3,         "Intel Pentium 4 (unknown type) (Prescott/Nocona)");
+   // Intel docs (302354, 306752, 306757, 306832, 309159, 309627).
    FMSQ(    0,15,  0, 4,  1, sP, "Intel Xeon MP (Potomac C0)");
    FMSQ(    0,15,  0, 4,  1, sM, "Intel Xeon MP (Cranford A0)");
    FMSQ(    0,15,  0, 4,  1, sX, "Intel Xeon (Nocona E0)");
@@ -3048,11 +3405,11 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMSQ(    0,15,  0, 4,  3, sX, "Intel Xeon (Nocona N0)");
    FMSQ(    0,15,  0, 4,  3, dP, "Intel Pentium 4 (Prescott N0)");
    FMS (    0,15,  0, 4,  3,     "Intel Pentium 4 (unknown type) (Prescott/Nocona/Irwindale N0)");
-   FMSQ(    0,15,  0, 4,  4, dc, "Intel Pentium Extreme Edition Processor 840 (Smithfield A0)");
    FMSQ(    0,15,  0, 4,  4, dd, "Intel Pentium D Processor 8x0 (Smithfield A0)");
+   FMSQ(    0,15,  0, 4,  4, dG, "Intel Pentium Extreme Edition Processor 840 (Smithfield A0)");
    FMS (    0,15,  0, 4,  4,     "Intel Pentium D (unknown type) (Smithfield A0)");
-   FMSQ(    0,15,  0, 4,  7, dc, "Pentium Extreme Edition Processor 840 (Smithfield B0)");
    FMSQ(    0,15,  0, 4,  7, dd, "Intel Pentium D Processor 8x0 (Smithfield B0)");
+   FMSQ(    0,15,  0, 4,  7, dG, "Pentium Extreme Edition Processor 840 (Smithfield B0)");
    FMS (    0,15,  0, 4,  7,     "Intel Pentium D (unknown type) (Smithfield B0)");
    FMSQ(    0,15,  0, 4,  8, s7, "Intel Dual-Core Xeon Processor 7000 (Paxville A0)");
    FMSQ(    0,15,  0, 4,  8, sX, "Intel Dual-Core Xeon (Paxville A0)");
@@ -3072,6 +3429,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0,15,  0, 4,     dd, "Intel Pentium D (Smithfield A0)");
    FMQ (    0,15,  0, 4,     dP, "Intel Pentium 4 (Prescott) / Pentium Extreme Edition (Smithfield A0)");
    FM  (    0,15,  0, 4,         "Intel Pentium 4 (unknown type) (Prescott/Nocona/Irwindale/Smithfield/Cranford/Potomac)");
+   // Intel docs (310307, 310309, 311827, 313065, 314554).
    FMSQ(    0,15,  0, 6,  2, dd, "Intel Pentium D Processor 9xx (Presler B1)");
    FMSQ(    0,15,  0, 6,  2, dP, "Intel Pentium 4 Processor 6x1 (Cedar Mill B1) / Pentium Extreme Edition Processor 955 (Presler B1)");
    FMS (    0,15,  0, 6,  2,     "Intel Pentium 4 (unknown type) (Cedar Mill/Presler B1)");
@@ -3100,22 +3458,36 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FQ  (    0,15,            dP, "Intel Pentium 4 (unknown model)");
    FQ  (    0,15,            dc, "Intel Pentium (unknown model)");
    F   (    0,15,                "Intel Pentium 4 / Pentium D / Xeon / Xeon MP / Celeron / Celeron D (unknown model)");
+   // NOTE: Intel spec updates describe CPUID in Itanium Register 3 format:
+   //    AAFFMMSSNN
+   //    AA = archrev (not reported via CPUID instruction)
+   //    FF = family
+   //    MM = model
+   //    SS = revision/stepping
+   //    NN = number (not reported via CPUID instruction)
+   // Intel docs (251141).
    FMS (    1,15,  0, 0,  7,     "Intel Itanium2 (McKinley B3)");
    FM  (    1,15,  0, 0,         "Intel Itanium2 (McKinley)");
+   // Intel docs (251141).
    FMS (    1,15,  0, 1,  5,     "Intel Itanium2 (Madison/Deerfield/Hondo B1)");
    FM  (    1,15,  0, 1,         "Intel Itanium2 (Madison/Deerfield/Hondo)");
+   // Intel docs (251141).
    FMS (    1,15,  0, 2,  1,     "Intel Itanium2 (Madison 9M/Fanwood A1)");
    FMS (    1,15,  0, 2,  2,     "Intel Itanium2 (Madison 9M/Fanwood A2)");
    FM  (    1,15,  0, 2,         "Intel Itanium2 (Madison)");
    F   (    1,15,                "Intel Itanium2 (unknown model)");
+   // Intel docs (251141).
    FMS (    2, 0,  0, 0,  5,     "Intel Itanium2 Dual-Core Processor 9000 (Montecito/Millington C1), 90nm");
    FMS (    2, 0,  0, 0,  7,     "Intel Itanium2 Dual-Core Processor 9000 (Montecito/Millington C2), 90nm");
    FM  (    2, 0,  0, 0,         "Intel Itanium2 Dual-Core Processor 9000 (Montecito/Millington), 90nm");
+   // Intel docs (251141).
    FMS (    2, 0,  0, 1,  1,     "Intel Itanium2 Dual-Core Processor 9100 (Montvale A1), 90nm");
    FM  (    2, 0,  0, 1,         "Intel Itanium2 Dual-Core Processor 9100 (Montvale), 90nm");
+   // Intel docs (323169).
    FMS (    2, 0,  0, 2,  4,     "Intel Itanium2 Processor 9300 (Tukwila E0), 65nm");
    FM  (    2, 0,  0, 2,         "Intel Itanium2 Processor 9300 (Tukwila), 65nm");
    F   (    2, 0,                "Intel Itanium2 (unknown model)");
+   // Intel docs (323169).
    FMS (    2, 1,  0, 0,  4,     "Intel Itanium2 Processor 9500 (Poulson D0), 32nm");
    FMS (    2, 1,  0, 0,  5,     "Intel Itanium2 Processor 9700 (Kittson E0), 22nm");
    FM  (    2, 1,  0, 0,         "Intel Itanium2 (unknown model) (Poulson/Kittson)");
@@ -3132,658 +3504,714 @@ decode_synth_amd(unsigned int         val,
    cstring  result = NULL;
    
    START;
-   FM  (0, 4,  0, 3,         "AMD 80486DX2");
-   FM  (0, 4,  0, 7,         "AMD 80486DX2WB");
-   FM  (0, 4,  0, 8,         "AMD 80486DX4");
-   FM  (0, 4,  0, 9,         "AMD 80486DX4WB");
-   FM  (0, 4,  0,14,         "AMD 5x86");
-   FM  (0, 4,  0,15,         "AMD 5xWB");
-   F   (0, 4,                "AMD 80486 / 5x (unknown model)");
-   FM  (0, 5,  0, 0,         "AMD SSA5 (PR75, PR90, PR100)");
-   FM  (0, 5,  0, 1,         "AMD 5k86 (PR120, PR133)");
-   FM  (0, 5,  0, 2,         "AMD 5k86 (PR166)");
-   FM  (0, 5,  0, 3,         "AMD 5k86 (PR200)");
-   FM  (0, 5,  0, 5,         "AMD Geode GX");
-   FM  (0, 5,  0, 6,         "AMD K6");
-   FM  (0, 5,  0, 7,         "AMD K6 (Little Foot)");
-   FMS (0, 5,  0, 8,  0,     "AMD K6-2 (Chomper A)");
-   FMS (0, 5,  0, 8, 12,     "AMD K6-2 (Chomper A)");
-   FM  (0, 5,  0, 8,         "AMD K6-2 (Chomper)");
-   FMS (0, 5,  0, 9,  1,     "AMD K6-III (Sharptooth B)");
-   FM  (0, 5,  0, 9,         "AMD K6-III (Sharptooth)");
-   FM  (0, 5,  0,10,         "AMD Geode LX");
-   FM  (0, 5,  0,13,         "AMD K6-2+, K6-III+");
-   F   (0, 5,                "AMD 5k86 / K6 / Geode (unknown model)");
-   FM  (0, 6,  0, 1,         "AMD Athlon (Argon)");
-   FM  (0, 6,  0, 2,         "AMD Athlon (K75 / Pluto / Orion)");
-   FMS (0, 6,  0, 3,  0,     "AMD Duron / mobile Duron (Spitfire A0)");
-   FMS (0, 6,  0, 3,  1,     "AMD Duron / mobile Duron (Spitfire A2)");
-   FM  (0, 6,  0, 3,         "AMD Duron / mobile Duron (Spitfire)");
-   FMS (0, 6,  0, 4,  2,     "AMD Athlon (Thunderbird A4-A7)");
-   FMS (0, 6,  0, 4,  4,     "AMD Athlon (Thunderbird A9)");
-   FM  (0, 6,  0, 4,         "AMD Athlon (Thunderbird)");
-   FMSQ(0, 6,  0, 6,  0, sA, "AMD Athlon MP (Palomino A0)");
-   FMSQ(0, 6,  0, 6,  0, dA, "AMD Athlon (Palomino A0)");
-   FMSQ(0, 6,  0, 6,  0, MA, "AMD mobile Athlon 4 (Palomino A0)");
-   FMSQ(0, 6,  0, 6,  0, sD, "AMD Duron MP (Palomino A0)");
-   FMSQ(0, 6,  0, 6,  0, MD, "AMD mobile Duron (Palomino A0)");
-   FMS (0, 6,  0, 6,  0,     "AMD Athlon (unknown type)  (Palomino A0)");
-   FMSQ(0, 6,  0, 6,  1, sA, "AMD Athlon MP (Palomino A2)");
-   FMSQ(0, 6,  0, 6,  1, dA, "AMD Athlon (Palomino A2)");
-   FMSQ(0, 6,  0, 6,  1, MA, "AMD mobile Athlon 4 (Palomino A2)");
-   FMSQ(0, 6,  0, 6,  1, sD, "AMD Duron MP (Palomino A2)");
-   FMSQ(0, 6,  0, 6,  1, MD, "AMD mobile Duron (Palomino A2)");
-   FMSQ(0, 6,  0, 6,  1, dD, "AMD Duron (Palomino A2)");
-   FMS (0, 6,  0, 6,  1,     "AMD Athlon (unknown type) (Palomino A2)");
-   FMSQ(0, 6,  0, 6,  2, sA, "AMD Athlon MP (Palomino A5)");
-   FMSQ(0, 6,  0, 6,  2, dX, "AMD Athlon XP (Palomino A5)");
-   FMSQ(0, 6,  0, 6,  2, MA, "AMD mobile Athlon 4 (Palomino A5)");
-   FMSQ(0, 6,  0, 6,  2, sD, "AMD Duron MP (Palomino A5)");
-   FMSQ(0, 6,  0, 6,  2, MD, "AMD mobile Duron (Palomino A5)");
-   FMSQ(0, 6,  0, 6,  2, dD, "AMD Duron (Palomino A5)");
-   FMS (0, 6,  0, 6,  2,     "AMD Athlon (unknown type) (Palomino A5)");
-   FMQ (0, 6,  0, 6,     MD, "AMD mobile Duron (Palomino)");
-   FMQ (0, 6,  0, 6,     dD, "AMD Duron (Palomino)");
-   FMQ (0, 6,  0, 6,     MA, "AMD mobile Athlon (Palomino)");
-   FMQ (0, 6,  0, 6,     dX, "AMD Athlon XP (Palomino)");
-   FMQ (0, 6,  0, 6,     dA, "AMD Athlon (Palomino)");
-   FM  (0, 6,  0, 6,         "AMD Athlon (unknown type) (Palomino)");
-   FMSQ(0, 6,  0, 7,  0, sD, "AMD Duron MP (Morgan A0)");
-   FMSQ(0, 6,  0, 7,  0, MD, "AMD mobile Duron (Morgan A0)");
-   FMSQ(0, 6,  0, 7,  0, dD, "AMD Duron (Morgan A0)");
-   FMS (0, 6,  0, 7,  0,     "AMD Duron (unknown type)  (Morgan A0)");
-   FMSQ(0, 6,  0, 7,  1, sD, "AMD Duron MP (Morgan A1)");
-   FMSQ(0, 6,  0, 7,  1, MD, "AMD mobile Duron (Morgan A1)");
-   FMSQ(0, 6,  0, 7,  1, dD, "AMD Duron (Morgan A1)");
-   FMS (0, 6,  0, 7,  1,     "AMD Duron (unknown type)  (Morgan A1)");
-   FMQ (0, 6,  0, 7,     sD, "AMD Duron MP (Morgan)");
-   FMQ (0, 6,  0, 7,     MD, "AMD mobile Duron (Morgan)");
-   FMQ (0, 6,  0, 7,     dD, "AMD Duron (Morgan)");
-   FM  (0, 6,  0, 7,         "AMD Duron (unknown type)  (Morgan)");
-   FMSQ(0, 6,  0, 8,  0, dS, "AMD Sempron (Thoroughbred A0)");
-   FMSQ(0, 6,  0, 8,  0, sD, "AMD Duron MP (Applebred A0)");
-   FMSQ(0, 6,  0, 8,  0, dD, "AMD Duron (Applebred A0)");
-   FMSQ(0, 6,  0, 8,  0, MX, "AMD mobile Athlon XP (Thoroughbred A0)");
-   FMSQ(0, 6,  0, 8,  0, sA, "AMD Athlon MP (Thoroughbred A0)");
-   FMSQ(0, 6,  0, 8,  0, dX, "AMD Athlon XP (Thoroughbred A0)");
-   FMSQ(0, 6,  0, 8,  0, dA, "AMD Athlon (Thoroughbred A0)");
-   FMS (0, 6,  0, 8,  0,     "AMD Athlon (unknown type) (Thoroughbred A0)");
-   FMSQ(0, 6,  0, 8,  1, MG, "AMD Geode NX (Thoroughbred B0)");
-   FMSQ(0, 6,  0, 8,  1, dS, "AMD Sempron (Thoroughbred B0)");
-   FMSQ(0, 6,  0, 8,  1, sD, "AMD Duron MP (Applebred B0)");
-   FMSQ(0, 6,  0, 8,  1, dD, "AMD Duron (Applebred B0)");
-   FMSQ(0, 6,  0, 8,  1, sA, "AMD Athlon MP (Thoroughbred B0)");
-   FMSQ(0, 6,  0, 8,  1, dX, "AMD Athlon XP (Thoroughbred B0)");
-   FMSQ(0, 6,  0, 8,  1, dA, "AMD Athlon (Thoroughbred B0)");
-   FMS (0, 6,  0, 8,  1,     "AMD Athlon (unknown type) (Thoroughbred B0)");
-   FMQ (0, 6,  0, 8,     MG, "AMD Geode NX (Thoroughbred)");
-   FMQ (0, 6,  0, 8,     dS, "AMD Sempron (Thoroughbred)");
-   FMQ (0, 6,  0, 8,     sD, "AMD Duron MP (Thoroughbred)");
-   FMQ (0, 6,  0, 8,     dD, "AMD Duron (Thoroughbred)");
-   FMQ (0, 6,  0, 8,     MX, "AMD mobile Athlon XP (Thoroughbred)");
-   FMQ (0, 6,  0, 8,     sA, "AMD Athlon MP (Thoroughbred)");
-   FMQ (0, 6,  0, 8,     dX, "AMD Athlon XP (Thoroughbred)");
-   FMQ (0, 6,  0, 8,     dA, "AMD Athlon XP (Thoroughbred)");
-   FM  (0, 6,  0, 8,         "AMD Athlon (unknown type) (Thoroughbred)");
-   FMSQ(0, 6,  0,10,  0, dS, "AMD Sempron (Barton A2)");
-   FMSQ(0, 6,  0,10,  0, ML, "AMD mobile Athlon XP-M (LV) (Barton A2)");
-   FMSQ(0, 6,  0,10,  0, MX, "AMD mobile Athlon XP-M (Barton A2)");
-   FMSQ(0, 6,  0,10,  0, dt, "AMD Athlon XP (Thorton A2)");
-   FMSQ(0, 6,  0,10,  0, sA, "AMD Athlon MP (Barton A2)");
-   FMSQ(0, 6,  0,10,  0, dX, "AMD Athlon XP (Barton A2)");
-   FMS (0, 6,  0,10,  0,     "AMD Athlon (unknown type) (Barton A2)");
-   FMQ (0, 6,  0,10,     dS, "AMD Sempron (Barton)");
-   FMQ (0, 6,  0,10,     ML, "AMD mobile Athlon XP-M (LV) (Barton)");
-   FMQ (0, 6,  0,10,     MX, "AMD mobile Athlon XP-M (Barton)");
-   FMQ (0, 6,  0,10,     sA, "AMD Athlon MP (Barton)");
-   FMQ (0, 6,  0,10,     dX, "AMD Athlon XP (Barton)");
-   FM  (0, 6,  0,10,         "AMD Athlon (unknown type) (Barton)");
-   F   (0, 6,                "AMD Athlon (unknown model)");
-   F   (0, 7,                "AMD Opteron (unknown model)");
-   FMS (0,15,  0, 4,  0,     "AMD Athlon 64 (SledgeHammer SH7-B0)");
-   FMSQ(0,15,  0, 4,  8, MX, "AMD mobile Athlon XP-M (SledgeHammer SH7-C0)");
-   FMSQ(0,15,  0, 4,  8, MA, "AMD mobile Athlon 64 (SledgeHammer SH7-C0)");
-   FMSQ(0,15,  0, 4,  8, dA, "AMD Athlon 64 (SledgeHammer SH7-C0)");
-   FMS (0,15,  0, 4,  8,     "AMD Athlon 64 (unknown type) (SledgeHammer SH7-C0)");
-   FMSQ(0,15,  0, 4, 10, MX, "AMD mobile Athlon XP-M (SledgeHammer SH7-CG)");
-   FMSQ(0,15,  0, 4, 10, MA, "AMD mobile Athlon 64 (SledgeHammer SH7-CG)");
-   FMSQ(0,15,  0, 4, 10, dA, "AMD Athlon 64 (SledgeHammer SH7-CG)");
-   FMS (0,15,  0, 4, 10,     "AMD Athlon 64 (unknown type) (SledgeHammer SH7-CG)");
-   FMQ (0,15,  0, 4,     MX, "AMD mobile Athlon XP-M (SledgeHammer SH7)");
-   FMQ (0,15,  0, 4,     MA, "AMD mobile Athlon 64 (SledgeHammer SH7)");
-   FMQ (0,15,  0, 4,     dA, "AMD Athlon 64 (SledgeHammer SH7)");
-   FM  (0,15,  0, 4,         "AMD Athlon 64 (unknown type) (SledgeHammer SH7)");
-   FMS (0,15,  0, 5,  0,     "AMD Opteron (DP SledgeHammer SH7-B0)");
-   FMS (0,15,  0, 5,  1,     "AMD Opteron (DP SledgeHammer SH7-B3)");
-   FMSQ(0,15,  0, 5,  8, sO, "AMD Opteron (DP SledgeHammer SH7-C0)");
-   FMSQ(0,15,  0, 5,  8, dF, "AMD Athlon 64 FX (DP SledgeHammer SH7-C0)");
-   FMS (0,15,  0, 5,  8,     "AMD Athlon 64 (unknown type) (DP SledgeHammer SH7-C0)");
-   FMSQ(0,15,  0, 5, 10, sO, "AMD Opteron (DP SledgeHammer SH7-CG)");
-   FMSQ(0,15,  0, 5, 10, dF, "AMD Athlon 64 FX (DP SledgeHammer SH7-CG)");
-   FMS (0,15,  0, 5, 10,     "AMD Athlon 64 (unknown type) (DP SledgeHammer SH7-CG)");
-   FMQ (0,15,  0, 5,     sO, "AMD Opteron (SledgeHammer SH7)");
-   FMQ (0,15,  0, 5,     dF, "AMD Athlon 64 FX (SledgeHammer SH7)");
-   FM  (0,15,  0, 5,         "AMD Athlon 64 (unknown type) (SledgeHammer SH7) FX");
-   FMSQ(0,15,  0, 7, 10, dF, "AMD Athlon 64 FX (DP SledgeHammer SH7-CG)");
-   FMSQ(0,15,  0, 7, 10, dA, "AMD Athlon 64 (DP SledgeHammer SH7-CG)");
-   FMS (0,15,  0, 7, 10,     "AMD Athlon 64 (unknown type) (DP SledgeHammer SH7-CG)");
-   FMQ (0,15,  0, 7,     dF, "AMD Athlon 64 FX (DP SledgeHammer SH7)");
-   FMQ (0,15,  0, 7,     dA, "AMD Athlon 64 (DP SledgeHammer SH7)");
-   FM  (0,15,  0, 7,         "AMD Athlon 64 (unknown type) (DP SledgeHammer SH7)");
-   FMSQ(0,15,  0, 8,  2, MS, "AMD mobile Sempron (ClawHammer CH7-CG)");
-   FMSQ(0,15,  0, 8,  2, MX, "AMD mobile Athlon XP-M (ClawHammer CH7-CG)");
-   FMSQ(0,15,  0, 8,  2, MA, "AMD mobile Athlon 64 (Odessa CH7-CG)");
-   FMSQ(0,15,  0, 8,  2, dA, "AMD Athlon 64 (ClawHammer CH7-CG)");
-   FMS (0,15,  0, 8,  2,     "AMD Athlon 64 (unknown type) (ClawHammer/Odessa CH7-CG)");
-   FMQ (0,15,  0, 8,     MS, "AMD mobile Sempron (Odessa CH7)");
-   FMQ (0,15,  0, 8,     MX, "AMD mobile Athlon XP-M (Odessa CH7)");
-   FMQ (0,15,  0, 8,     MA, "AMD mobile Athlon 64 (Odessa CH7)");
-   FMQ (0,15,  0, 8,     dA, "AMD Athlon 64 (ClawHammer CH7)");
-   FM  (0,15,  0, 8,         "AMD Athlon 64 (unknown type) (ClawHammer/Odessa CH7)");
-   FMS (0,15,  0,11,  2,     "AMD Athlon 64 (ClawHammer CH7-CG)");
-   FM  (0,15,  0,11,         "AMD Athlon 64 (ClawHammer CH7)");
-   FMSQ(0,15,  0,12,  0, MS, "AMD mobile Sempron (Dublin DH7-CG)");
-   FMSQ(0,15,  0,12,  0, dS, "AMD Sempron (Paris DH7-CG)");
-   FMSQ(0,15,  0,12,  0, MX, "AMD mobile Athlon XP-M (ClawHammer/Odessa DH7-CG)");
-   FMSQ(0,15,  0,12,  0, MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7-CG)");
-   FMSQ(0,15,  0,12,  0, dA, "AMD Athlon 64 (NewCastle DH7-CG)");
-   FMS (0,15,  0,12,  0,     "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris/Dublin DH7-CG)");
-   FMQ (0,15,  0,12,     MS, "AMD mobile Sempron (Dublin DH7)");
-   FMQ (0,15,  0,12,     dS, "AMD Sempron (Paris DH7)");
-   FMQ (0,15,  0,12,     MX, "AMD mobile Athlon XP-M (NewCastle DH7)");
-   FMQ (0,15,  0,12,     MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7)");
-   FMQ (0,15,  0,12,     dA, "AMD Athlon 64 (NewCastle DH7)");
-   FM  (0,15,  0,12,         "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris/Dublin DH7)");
-   FMSQ(0,15,  0,14,  0, MS, "AMD mobile Sempron (Dublin DH7-CG)");
-   FMSQ(0,15,  0,14,  0, dS, "AMD Sempron (Paris DH7-CG)");
-   FMSQ(0,15,  0,14,  0, MX, "AMD mobile Athlon XP-M (ClawHammer/Odessa DH7-CG)");
-   FMSQ(0,15,  0,14,  0, MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7-CG)");
-   FMSQ(0,15,  0,14,  0, dA, "AMD Athlon 64 (NewCastle DH7-CG)");
-   FMS (0,15,  0,14,  0,     "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris/Dublin DH7-CG)");
-   FMQ (0,15,  0,14,     dS, "AMD Sempron (Paris DH7)");
-   FMQ (0,15,  0,14,     MS, "AMD mobile Sempron (Dublin DH7)");
-   FMQ (0,15,  0,14,     MX, "AMD mobile Athlon XP-M (ClawHammer/Odessa DH7)");
-   FMQ (0,15,  0,14,     MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7)");
-   FMQ (0,15,  0,14,     dA, "AMD Athlon 64 (NewCastle DH7)");
-   FM  (0,15,  0,14,         "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris/Dublin DH7)");
-   FMSQ(0,15,  0,15,  0, dS, "AMD Sempron (Paris DH7-CG)");
-   FMSQ(0,15,  0,15,  0, MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7-CG)");
-   FMSQ(0,15,  0,15,  0, dA, "AMD Athlon 64 (NewCastle DH7-CG)");
-   FMS (0,15,  0,15,  0,     "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris DH7-CG)");
-   FMQ (0,15,  0,15,     dS, "AMD Sempron (Paris DH7)");
-   FMQ (0,15,  0,15,     MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7)");
-   FMQ (0,15,  0,15,     dA, "AMD Athlon 64 (NewCastle DH7)");
-   FM  (0,15,  0,15,         "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris DH7)");
-   FMSQ(0,15,  1, 4,  0, MX, "AMD mobile Athlon XP-M (Oakville SH7-D0)");
-   FMSQ(0,15,  1, 4,  0, MA, "AMD mobile Athlon 64 (Oakville SH7-D0)");
-   FMSQ(0,15,  1, 4,  0, dA, "AMD Athlon 64 (Winchester SH7-D0)");
-   FMS (0,15,  1, 4,  0,     "AMD Athlon 64 (unknown type) (Winchester/Oakville SH7-D0)");
-   FMQ (0,15,  1, 4,     MX, "AMD mobile Athlon XP-M (Oakville SH7)");
-   FMQ (0,15,  1, 4,     MA, "AMD mobile Athlon 64 (Oakville SH7)");
-   FMQ (0,15,  1, 4,     dA, "AMD Athlon 64 (Winchester SH7)");
-   FM  (0,15,  1, 4,         "AMD Athlon 64 (unknown type) (Winchester/Oakville SH7)");
-   FMSQ(0,15,  1, 5,  0, sO, "AMD Opteron (Winchester SH7-D0)");
-   FMSQ(0,15,  1, 5,  0, dF, "AMD Athlon 64 FX (Winchester SH7-D0)");
-   FMS (0,15,  1, 5,  0,     "AMD Athlon 64 (unknown type) (Winchester SH7-D0)");
-   FMQ (0,15,  1, 5,     sO, "AMD Opteron (Winchester SH7)");
-   FMQ (0,15,  1, 5,     dF, "AMD Athlon 64 FX (Winchester SH7)");
-   FM  (0,15,  1, 5,         "AMD Athlon 64 (unknown type) (Winchester SH7)");
-   FMSQ(0,15,  1, 7,  0, dF, "AMD Athlon 64 FX (Winchester SH7-D0)");
-   FMSQ(0,15,  1, 7,  0, dA, "AMD Athlon 64 (Winchester SH7-D0)");
-   FMS (0,15,  1, 7,  0,     "AMD Athlon 64 (unknown type) (Winchester SH7-D0)");
-   FMQ (0,15,  1, 7,     dF, "AMD Athlon 64 FX (Winchester SH7)");
-   FMQ (0,15,  1, 7,     dA, "AMD Athlon 64 (Winchester SH7)");
-   FM  (0,15,  1, 7,         "AMD Athlon 64 (unknown type) (Winchester SH7)");
-   FMSQ(0,15,  1, 8,  0, MS, "AMD mobile Sempron (Georgetown/Sonora CH-D0)");
-   FMSQ(0,15,  1, 8,  0, MX, "AMD mobile Athlon XP-M (Oakville CH-D0)");
-   FMSQ(0,15,  1, 8,  0, MA, "AMD mobile Athlon 64 (Oakville CH-D0)");
-   FMSQ(0,15,  1, 8,  0, dA, "AMD Athlon 64 (Winchester CH-D0)");
-   FMS (0,15,  1, 8,  0,     "AMD Athlon 64 (unknown type) (Winchester/Oakville/Georgetown/Sonora CH-D0)");
-   FMQ (0,15,  1, 8,     MS, "AMD mobile Sempron (Georgetown/Sonora CH)");
-   FMQ (0,15,  1, 8,     MX, "AMD mobile Athlon XP-M (Oakville CH)");
-   FMQ (0,15,  1, 8,     MA, "AMD mobile Athlon 64 (Oakville CH)");
-   FMQ (0,15,  1, 8,     dA, "AMD Athlon 64 (Winchester CH)");
-   FM  (0,15,  1, 8,         "AMD Athlon 64 (unknown type) (Winchester/Oakville/Georgetown/Sonora CH)");
-   FMS (0,15,  1,11,  0,     "AMD Athlon 64 (Winchester CH-D0)");
-   FM  (0,15,  1,11,         "AMD Athlon 64 (Winchester CH)");
-   FMSQ(0,15,  1,12,  0, MS, "AMD mobile Sempron (Georgetown/Sonora DH8-D0)");
-   FMSQ(0,15,  1,12,  0, dS, "AMD Sempron (Palermo DH8-D0)");
-   FMSQ(0,15,  1,12,  0, MX, "AMD Athlon XP-M (Winchester DH8-D0)");
-   FMSQ(0,15,  1,12,  0, MA, "AMD mobile Athlon 64 (Oakville DH8-D0)");
-   FMSQ(0,15,  1,12,  0, dA, "AMD Athlon 64 (Winchester DH8-D0)");
-   FMS (0,15,  1,12,  0,     "AMD Athlon 64 (unknown type) (Winchester/Oakville/Georgetown/Sonora/Palermo DH8-D0)");
-   FMQ (0,15,  1,12,     MS, "AMD mobile Sempron (Georgetown/Sonora DH8)");
-   FMQ (0,15,  1,12,     dS, "AMD Sempron (Palermo DH8)");
-   FMQ (0,15,  1,12,     MX, "AMD Athlon XP-M (Winchester DH8)");
-   FMQ (0,15,  1,12,     MA, "AMD mobile Athlon 64 (Oakville DH8)");
-   FMQ (0,15,  1,12,     dA, "AMD Athlon 64 (Winchester DH8)");
-   FM  (0,15,  1,12,         "AMD Athlon 64 (Winchester/Oakville/Georgetown/Sonora/Palermo DH8)");
-   FMSQ(0,15,  1,15,  0, dS, "AMD Sempron (Palermo DH8-D0)");
-   FMSQ(0,15,  1,15,  0, dA, "AMD Athlon 64 (Winchester DH8-D0)");
-   FMS (0,15,  1,15,  0,     "AMD Athlon 64 (Winchester DH8-D0) / Sempron (Palermo DH8-D0)");
-   FMQ (0,15,  1,15,     dS, "AMD Sempron (Palermo DH8)");
-   FMQ (0,15,  1,15,     dA, "AMD Athlon 64 (Winchester DH8)");
-   FM  (0,15,  1,15,         "AMD Athlon 64 (unknown type) (Winchester/Palermo DH8)");
-   FMSQ(0,15,  2, 1,  0, s8, "AMD Dual Core Opteron (Egypt JH-E1)");
-   FMSQ(0,15,  2, 1,  0, sO, "AMD Dual Core Opteron (Italy JH-E1)");
-   FMS (0,15,  2, 1,  0,     "AMD Dual Core Opteron (Italy/Egypt JH-E1)");
-   FMSQ(0,15,  2, 1,  2, s8, "AMD Dual Core Opteron (Egypt JH-E6)");
-   FMSQ(0,15,  2, 1,  2, sO, "AMD Dual Core Opteron (Italy JH-E6)");
-   FMS (0,15,  2, 1,  2,     "AMD Dual Core Opteron (Italy/Egypt JH-E6)");
-   FMQ (0,15,  2, 1,     s8, "AMD Dual Core Opteron (Egypt JH)");
-   FMQ (0,15,  2, 1,     sO, "AMD Dual Core Opteron (Italy JH)");
-   FM  (0,15,  2, 1,         "AMD Dual Core Opteron (Italy/Egypt JH)");
-   FMSQ(0,15,  2, 3,  2, DO, "AMD Dual Core Opteron (Denmark JH-E6)");
-   FMSQ(0,15,  2, 3,  2, dF, "AMD Athlon 64 FX (Toledo JH-E6)");
-   FMSQ(0,15,  2, 3,  2, dm, "AMD Athlon 64 X2 (Manchester JH-E6)");
-   FMSQ(0,15,  2, 3,  2, dA, "AMD Athlon 64 X2 (Toledo JH-E6)");
-   FMS (0,15,  2, 3,  2,     "AMD Athlon 64 (unknown type) (Toledo/Manchester/Denmark JH-E6)");
-   FMQ (0,15,  2, 3,     sO, "AMD Dual Core Opteron (Denmark JH)");
-   FMQ (0,15,  2, 3,     dF, "AMD Athlon 64 FX (Toledo JH)");
-   FMQ (0,15,  2, 3,     dm, "AMD Athlon 64 X2 (Manchester JH)");
-   FMQ (0,15,  2, 3,     dA, "AMD Athlon 64 X2 (Toledo JH)");
-   FM  (0,15,  2, 3,         "AMD Athlon 64 (unknown type) (Toledo/Manchester/Denmark JH)");
-   FMSQ(0,15,  2, 4,  2, MA, "AMD mobile Athlon 64 (Newark SH-E5)");
-   FMSQ(0,15,  2, 4,  2, MT, "AMD mobile Turion (Lancaster/Richmond SH-E5)");
-   FMS (0,15,  2, 4,  2,     "AMD mobile Athlon 64 (unknown type) (Newark/Lancaster/Richmond SH-E5)");
-   FMQ (0,15,  2, 4,     MA, "AMD mobile Athlon 64 (Newark SH)");
-   FMQ (0,15,  2, 4,     MT, "AMD mobile Turion (Lancaster/Richmond SH)");
-   FM  (0,15,  2, 4,         "AMD mobile Athlon 64 (unknown type) (Newark/Lancaster/Richmond SH)");
-   FMQ (0,15,  2, 5,     s8, "AMD Opteron (Athens SH-E4)");
-   FMQ (0,15,  2, 5,     sO, "AMD Opteron (Troy SH-E4)");
-   FM  (0,15,  2, 5,         "AMD Opteron (Troy/Athens SH-E4)");
-   FMSQ(0,15,  2, 7,  1, sO, "AMD Opteron (Venus SH-E4)");
-   FMSQ(0,15,  2, 7,  1, dF, "AMD Athlon 64 FX (San Diego SH-E4)");
-   FMSQ(0,15,  2, 7,  1, dA, "AMD Athlon 64 (San Diego SH-E4)");
-   FMS (0,15,  2, 7,  1,     "AMD Athlon 64 (unknown type) (Venus/San Diego SH-E4)");
-   FMQ (0,15,  2, 7,     sO, "AMD Opteron (San Diego SH)");
-   FMQ (0,15,  2, 7,     dF, "AMD Athlon 64 FX (San Diego SH)");
-   FMQ (0,15,  2, 7,     dA, "AMD Athlon 64 (San Diego SH)");
-   FM  (0,15,  2, 7,         "AMD Athlon 64 (unknown type) (San Diego SH)");
-   FM  (0,15,  2,11,         "AMD Athlon 64 X2 (Manchester BH-E4)");
-   FMS (0,15,  2,12,  0,     "AMD Sempron (Palermo DH-E3)");
-   FMSQ(0,15,  2,12,  2, MS, "AMD mobile Sempron (Albany/Roma DH-E6)");
-   FMSQ(0,15,  2,12,  2, dS, "AMD Sempron (Palermo DH-E6)");
-   FMSQ(0,15,  2,12,  2, dA, "AMD Athlon 64 (Venice DH-E6)");
-   FMS (0,15,  2,12,  2,     "AMD Athlon 64 (Venice/Palermo/Albany/Roma DH-E6)");
-   FMQ (0,15,  2,12,     MS, "AMD mobile Sempron (Albany/Roma DH)");
-   FMQ (0,15,  2,12,     dS, "AMD Sempron (Palermo DH)");
-   FMQ (0,15,  2,12,     dA, "AMD Athlon 64 (Venice DH)");
-   FM  (0,15,  2,12,         "AMD Athlon 64 (Venice/Palermo/Albany/Roma DH)");
-   FMSQ(0,15,  2,15,  0, dS, "AMD Sempron (Palermo DH-E3)");
-   FMSQ(0,15,  2,15,  0, dA, "AMD Athlon 64 (Venice DH-E3)");
-   FMS (0,15,  2,15,  0,     "AMD Athlon 64 (Venice/Palermo DH-E3)");
-   FMSQ(0,15,  2,15,  2, dS, "AMD Sempron (Palermo DH-E6)");
-   FMSQ(0,15,  2,15,  2, dA, "AMD Athlon 64 (Venice DH-E6)");
-   FMS (0,15,  2,15,  2,     "AMD Athlon 64 (Venice/Palermo DH-E6)");
-   FMQ (0,15,  2,15,     dS, "AMD Sempron (Palermo DH)");
-   FMQ (0,15,  2,15,     dA, "AMD Athlon 64 (Venice DH)");
-   FM  (0,15,  2,15,         "AMD Athlon 64 (Venice/Palermo DH)");
-   FMS (0,15,  4, 1,  2,     "AMD Dual-Core Opteron (Santa Rosa JH-F2)");
-   FMS (0,15,  4, 1,  3,     "AMD Dual-Core Opteron (Santa Rosa JH-F3)");
-   FM  (0,15,  4, 1,         "AMD Dual-Core Opteron (Santa Rosa)");
-   FMSQ(0,15,  4, 3,  2, DO, "AMD Dual-Core Opteron (Santa Rosa JH-F2)");
-   FMSQ(0,15,  4, 3,  2, sO, "AMD Opteron (Santa Rosa JH-F2)");
-   FMSQ(0,15,  4, 3,  2, dF, "AMD Athlon 64 FX Dual-Core (Windsor JH-F2)");
-   FMSQ(0,15,  4, 3,  2, dA, "AMD Athlon 64 X2 Dual-Core (Windsor JH-F2)");
-   FMS (0,15,  4, 3,  2,     "AMD Athlon 64 (unknown type) (Windsor JH-F2)");
-   FMSQ(0,15,  4, 3,  3, DO, "AMD Dual-Core Opteron (Santa Rosa JH-F3)");
-   FMSQ(0,15,  4, 3,  3, sO, "AMD Opteron (Santa Rosa JH-F3)");
-   FMSQ(0,15,  4, 3,  3, dF, "AMD Athlon 64 FX Dual-Core (Windsor JH-F3)");
-   FMSQ(0,15,  4, 3,  3, dA, "AMD Athlon 64 X2 Dual-Core (Windsor JH-F3)");
-   FMS (0,15,  4, 3,  3,     "AMD Athlon 64 (unknown type) (Windsor/Santa Rosa JH-F3)");
-   FMQ (0,15,  4, 3,     DO, "AMD Dual-Core Opteron (Santa Rosa)");
-   FMQ (0,15,  4, 3,     sO, "AMD Opteron (Santa Rosa)");
-   FMQ (0,15,  4, 3,     dF, "AMD Athlon 64 FX Dual-Core (Windsor)");
-   FMQ (0,15,  4, 3,     dA, "AMD Athlon 64 X2 Dual-Core (Windsor)");
-   FM  (0,15,  4, 3,         "AMD Athlon 64 (unknown type) (Windsor/Santa Rosa)");
-   FMSQ(0,15,  4, 8,  2, dA, "AMD Athlon 64 X2 Dual-Core (Windsor BH-F2)");
-   FMSQ(0,15,  4, 8,  2, Mt, "AMD Turion 64 X2 (Trinidad BH-F2)");
-   FMSQ(0,15,  4, 8,  2, MT, "AMD Turion 64 X2 (Taylor BH-F2)");
-   FMS (0,15,  4, 8,  2,     "AMD Athlon 64 (unknown type) (Windsor/Taylor/Trinidad BH-F2)");
-   FMQ (0,15,  4, 8,     dA, "AMD Athlon 64 X2 Dual-Core (Windsor)");
-   FMQ (0,15,  4, 8,     Mt, "AMD Turion 64 X2 (Trinidad)");
-   FMQ (0,15,  4, 8,     MT, "AMD Turion 64 X2 (Taylor)");
-   FM  (0,15,  4, 8,         "AMD Athlon 64 (unknown type) (Windsor/Taylor/Trinidad)");
-   FMS (0,15,  4,11,  2,     "AMD Athlon 64 X2 Dual-Core (Windsor BH-F2)");
-   FM  (0,15,  4,11,         "AMD Athlon 64 X2 Dual-Core (Windsor)");
-   FMSQ(0,15,  4,12,  2, MS, "AMD mobile Sempron (Keene BH-F2)");
-   FMSQ(0,15,  4,12,  2, dS, "AMD Sempron (Manila BH-F2)");
-   FMSQ(0,15,  4,12,  2, Mt, "AMD Turion (Trinidad BH-F2)");
-   FMSQ(0,15,  4,12,  2, MT, "AMD Turion (Taylor BH-F2)");
-   FMSQ(0,15,  4,12,  2, dA, "AMD Athlon 64 (Orleans BH-F2)"); 
-   FMS (0,15,  4,12,  2,     "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene/Taylor/Trinidad BH-F2)");
-   FMQ (0,15,  4,12,     MS, "AMD mobile Sempron (Keene)");
-   FMQ (0,15,  4,12,     dS, "AMD Sempron (Manila)");
-   FMQ (0,15,  4,12,     Mt, "AMD Turion (Trinidad)");
-   FMQ (0,15,  4,12,     MT, "AMD Turion (Taylor)");
-   FMQ (0,15,  4,12,     dA, "AMD Athlon 64 (Orleans)"); 
-   FM  (0,15,  4,12,         "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene/Taylor/Trinidad)");
-   FMSQ(0,15,  4,15,  2, MS, "AMD mobile Sempron (Keene DH-F2)");
-   FMSQ(0,15,  4,15,  2, dS, "AMD Sempron (Manila DH-F2)");
-   FMSQ(0,15,  4,15,  2, dA, "AMD Athlon 64 (Orleans DH-F2)");
-   FMS (0,15,  4,15,  2,     "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene DH-F2)");
-   FMQ (0,15,  4,15,     MS, "AMD mobile Sempron (Keene)");
-   FMQ (0,15,  4,15,     dS, "AMD Sempron (Manila)");
-   FMQ (0,15,  4,15,     dA, "AMD Athlon 64 (Orleans)");
-   FM  (0,15,  4,15,         "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene)");
-   FMS (0,15,  5,13,  3,     "AMD Opteron (Santa Rosa JH-F3)");
-   FM  (0,15,  5,13,         "AMD Opteron (Santa Rosa)");
-   FMSQ(0,15,  5,15,  2, MS, "AMD mobile Sempron (Keene DH-F2)");
-   FMSQ(0,15,  5,15,  2, dS, "AMD Sempron (Manila DH-F2)");
-   FMSQ(0,15,  5,15,  2, dA, "AMD Athlon 64 (Orleans DH-F2)");
-   FMS (0,15,  5,15,  2,     "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene DH-F2)");
-   FMS (0,15,  5,15,  3,     "AMD Athlon 64 (Orleans DH-F3)");
-   FMQ (0,15,  5,15,     MS, "AMD mobile Sempron (Keene)");
-   FMQ (0,15,  5,15,     dS, "AMD Sempron (Manila)");
-   FMQ (0,15,  5,15,     dA, "AMD Athlon 64 (Orleans)");
-   FM  (0,15,  5,15,         "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene)");
-   FM  (0,15,  5,15,         "AMD Athlon 64 (Orleans)");
-   FMS (0,15,  6, 8,  1,     "AMD Turion 64 X2 (Tyler BH-G1)");
-   FMSQ(0,15,  6, 8,  2, MT, "AMD Turion 64 X2 (Tyler BH-G2)");
-   FMSQ(0,15,  6, 8,  2, dS, "AMD Sempron Dual-Core (Tyler BH-G2)");
-   FMS (0,15,  6, 8,  2,     "AMD Turion 64 (unknown type) (Tyler BH-G2)");
-   FMQ (0,15,  6, 8,     MT, "AMD Turion 64 X2 (Tyler)");
-   FMQ (0,15,  6, 8,     dS, "AMD Sempron Dual-Core (Tyler)");
-   FM  (0,15,  6, 8,         "AMD Turion 64 (unknown type) (Tyler)");
-   FMSQ(0,15,  6,11,  1, dS, "AMD Sempron Dual-Core (Sparta BH-G1)");
-   FMSQ(0,15,  6,11,  1, dA, "AMD Athlon 64 X2 Dual-Core (Brisbane BH-G1)");
-   FMS (0,15,  6,11,  1,     "AMD Athlon 64 (unknown type) (Brisbane/Sparta BH-G1)");
-   FMSQ(0,15,  6,11,  2, dA, "AMD Athlon 64 X2 Dual-Core (Brisbane BH-G2)");
-   FMSQ(0,15,  6,11,  2, Mn, "AMD Turion Neo X2 Dual-Core (Huron BH-G2)");
-   FMSQ(0,15,  6,11,  2, MN, "AMD Athlon Neo X2 (Huron BH-G2)");
-   FMS (0,15,  6,11,  2,     "AMD Athlon 64 (unknown type) (Brisbane/Huron BH-G2)");
-   FMQ (0,15,  6,11,     dS, "AMD Sempron Dual-Core (Sparta)");
-   FMQ (0,15,  6,11,     Mn, "AMD Turion Neo X2 Dual-Core (Huron)");
-   FMQ (0,15,  6,11,     MN, "AMD Athlon Neo X2 (Huron)");
-   FMQ (0,15,  6,11,     dA, "AMD Athlon 64 X2 Dual-Core (Brisbane)");
-   FM  (0,15,  6,11,         "AMD Athlon 64 (unknown type) (Brisbane/Sparta/Huron)");
-   FMSQ(0,15,  6,12,  2, MS, "AMD mobile Sempron (Sherman DH-G2)");
-   FMSQ(0,15,  6,12,  2, dS, "AMD Sempron (Sparta DH-G2)");
-   FMSQ(0,15,  6,12,  2, dA, "AMD Athlon 64 (Lima DH-G2)");
-   FMS (0,15,  6,12,  2,     "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman DH-G2)");
-   FMQ (0,15,  6,12,     MS, "AMD mobile Sempron (Sherman)");
-   FMQ (0,15,  6,12,     dS, "AMD Sempron (Sparta)");
-   FMQ (0,15,  6,12,     dA, "AMD Athlon 64 (Lima)");
-   FM  (0,15,  6,12,         "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman)");
-   FMSQ(0,15,  6,15,  2, MS, "AMD mobile Sempron (Sherman DH-G2)");
-   FMSQ(0,15,  6,15,  2, dS, "AMD Sempron (Sparta DH-G2)");
-   FMSQ(0,15,  6,15,  2, MN, "AMD Athlon Neo (Huron DH-G2)");
-   FMS (0,15,  6,15,  2,     "AMD Athlon Neo (unknown type) (Huron/Sparta/Sherman DH-G2)");
-   FMQ (0,15,  6,15,     MS, "AMD mobile Sempron (Sherman)");
-   FMQ (0,15,  6,15,     dS, "AMD Sempron (Sparta)");
-   FMQ (0,15,  6,15,     MN, "AMD Athlon Neo (Huron)");
-   FM  (0,15,  6,15,         "AMD Athlon Neo (unknown type) (Huron/Sparta/Sherman)");
-   FMSQ(0,15,  7,12,  2, MS, "AMD mobile Sempron (Sherman DH-G2)");
-   FMSQ(0,15,  7,12,  2, dS, "AMD Sempron (Sparta DH-G2)");
-   FMSQ(0,15,  7,12,  2, dA, "AMD Athlon (Lima DH-G2)");
-   FMS (0,15,  7,12,  2,     "AMD Athlon (unknown type) (Lima/Sparta/Sherman DH-G2)");
-   FMQ (0,15,  7,12,     MS, "AMD mobile Sempron (Sherman)");
-   FMQ (0,15,  7,12,     dS, "AMD Sempron (Sparta)");
-   FMQ (0,15,  7,12,     dA, "AMD Athlon (Lima)");
-   FM  (0,15,  7,12,         "AMD Athlon (unknown type) (Lima/Sparta/Sherman)");
-   FMSQ(0,15,  7,15,  1, MS, "AMD mobile Sempron (Sherman DH-G1)");
-   FMSQ(0,15,  7,15,  1, dS, "AMD Sempron (Sparta DH-G1)");
-   FMSQ(0,15,  7,15,  1, dA, "AMD Athlon 64 (Lima DH-G1)");
-   FMS (0,15,  7,15,  1,     "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman DH-G1)");
-   FMSQ(0,15,  7,15,  2, MS, "AMD mobile Sempron (Sherman DH-G2)");
-   FMSQ(0,15,  7,15,  2, dS, "AMD Sempron (Sparta DH-G2)");
-   FMSQ(0,15,  7,15,  2, MN, "AMD Athlon Neo (Huron DH-G2)");
-   FMSQ(0,15,  7,15,  2, dA, "AMD Athlon 64 (Lima DH-G2)");
-   FMS (0,15,  7,15,  2,     "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman/Huron DH-G2)");
-   FMQ (0,15,  7,15,     MS, "AMD mobile Sempron (Sherman)");
-   FMQ (0,15,  7,15,     dS, "AMD Sempron (Sparta)");
-   FMQ (0,15,  7,15,     MN, "AMD Athlon Neo (Huron)");
-   FMQ (0,15,  7,15,     dA, "AMD Athlon 64 (Lima)");
-   FM  (0,15,  7,15,         "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman/Huron)");
-   FMS (0,15, 12, 1,  3,     "AMD Athlon 64 FX Dual-Core (Windsor JH-F3)");
-   FM  (0,15, 12, 1,         "AMD Athlon 64 FX Dual-Core (Windsor)");
-   F   (0,15,                "AMD (unknown model)");
-   FMSQ(1,15,  0, 2,  1, sO, "AMD Quad-Core Opteron (Barcelona DR-B1)");
-   FMS (1,15,  0, 2,  1,     "AMD (unknown type) (Barcelona DR-B1)");
-   FMSQ(1,15,  0, 2,  2, EO, "AMD Embedded Opteron (Barcelona DR-B2)");
-   FMSQ(1,15,  0, 2,  2, sO, "AMD Quad-Core Opteron (Barcelona DR-B2)");
-   FMSQ(1,15,  0, 2,  2, Tp, "AMD Phenom Triple-Core (Toliman DR-B2)");
-   FMSQ(1,15,  0, 2,  2, Qp, "AMD Phenom Quad-Core (Agena DR-B2)");
-   FMS (1,15,  0, 2,  2,     "AMD (unknown type) (Barcelona/Toliman/Agena DR-B2)");
-   FMSQ(1,15,  0, 2,  3, EO, "AMD Embedded Opteron (Barcelona DR-B3)");
-   FMSQ(1,15,  0, 2,  3, sO, "AMD Quad-Core Opteron (Barcelona DR-B3)");
-   FMSQ(1,15,  0, 2,  3, Tp, "AMD Phenom Triple-Core (Toliman DR-B3)");
-   FMSQ(1,15,  0, 2,  3, Qp, "AMD Phenom Quad-Core (Agena DR-B3)");
-   FMSQ(1,15,  0, 2,  3, dA, "AMD Athlon Dual-Core (Kuma DR-B3)");
-   FMS (1,15,  0, 2,  3,     "AMD (unknown type) (Barcelona/Toliman/Agena/Kuma DR-B3)");
-   FMS (1,15,  0, 2, 10,     "AMD Quad-Core Opteron (Barcelona DR-BA)");
-   FMQ (1,15,  0, 2,     EO, "AMD Embedded Opteron (Barcelona)");
-   FMQ (1,15,  0, 2,     sO, "AMD Quad-Core Opteron (Barcelona)");
-   FMQ (1,15,  0, 2,     Tp, "AMD Phenom Triple-Core (Toliman)");
-   FMQ (1,15,  0, 2,     Qp, "AMD Phenom Quad-Core (Agena)");
-   FMQ (1,15,  0, 2,     dA, "AMD Athlon Dual-Core (Kuma)");
-   FM  (1,15,  0, 2,         "AMD (unknown type) (Barcelona/Toliman/Agena/Kuma)");
-   FMSQ(1,15,  0, 4,  2, EO, "AMD Embedded Opteron (Shanghai RB-C2)");
-   FMSQ(1,15,  0, 4,  2, sO, "AMD Quad-Core Opteron (Shanghai RB-C2)");
-   FMSQ(1,15,  0, 4,  2, dr, "AMD Athlon Dual-Core (Propus RB-C2)");
-   FMSQ(1,15,  0, 4,  2, dA, "AMD Athlon Dual-Core (Regor RB-C2)");
-   FMSQ(1,15,  0, 4,  2, Dp, "AMD Phenom II X2 (Callisto RB-C2)");
-   FMSQ(1,15,  0, 4,  2, Tp, "AMD Phenom II X3 (Heka RB-C2)");
-   FMSQ(1,15,  0, 4,  2, Qp, "AMD Phenom II X4 (Deneb RB-C2)");
-   FMS (1,15,  0, 4,  2,     "AMD Athlon (unknown type) (Regor/Propus/Shanghai/Callisto/Heka/Deneb RB-C2)");
-   FMSQ(1,15,  0, 4,  3, Dp, "AMD Phenom II X2 (Callisto RB-C3)");
-   FMSQ(1,15,  0, 4,  3, Tp, "AMD Phenom II X3 (Heka RB-C3)");
-   FMSQ(1,15,  0, 4,  3, Qp, "AMD Phenom II X4 (Deneb RB-C3)");
-   FMS (1,15,  0, 4,  3,     "AMD Phenom II (unknown type) (Callisto/Heka/Deneb RB-C3)");
-   FMQ (1,15,  0, 4,     EO, "AMD Embedded Opteron (Shanghai)");
-   FMQ (1,15,  0, 4,     sO, "AMD Quad-Core Opteron (Shanghai)");
-   FMQ (1,15,  0, 4,     dr, "AMD Athlon Dual-Core (Propus)");
-   FMQ (1,15,  0, 4,     dA, "AMD Athlon Dual-Core (Regor)");
-   FMQ (1,15,  0, 4,     Dp, "AMD Phenom II X2 (Callisto)");
-   FMQ (1,15,  0, 4,     Tp, "AMD Phenom II X3 (Heka)");
-   FMQ (1,15,  0, 4,     Qp, "AMD Phenom II X4 (Deneb)");
-   FM  (1,15,  0, 4,         "AMD Athlon (unknown type) (Regor/Propus/Shanghai/Callisto/Heka/Deneb)");
-   FMSQ(1,15,  0, 5,  2, DA, "AMD Athlon II X2 (Regor BL-C2)");
-   FMSQ(1,15,  0, 5,  2, TA, "AMD Athlon II X3 (Rana BL-C2)");
-   FMSQ(1,15,  0, 5,  2, QA, "AMD Athlon II X4 (Propus BL-C2)");
-   FMS (1,15,  0, 5,  2,     "AMD Athlon (unknown type) (Regor/Rana/Propus BL-C2)");
-   FMSQ(1,15,  0, 5,  3, TA, "AMD Athlon II X3 (Rana BL-C3)");
-   FMSQ(1,15,  0, 5,  3, QA, "AMD Athlon II X4 (Propus BL-C3)");
-   FMSQ(1,15,  0, 5,  3, Tp, "AMD Phenom II Triple-Core (Heka BL-C3)");
-   FMSQ(1,15,  0, 5,  3, Qp, "AMD Phenom II Quad-Core (Deneb BL-C3)");
-   FMS (1,15,  0, 5,  3,     "AMD Athlon (unknown type) (Regor/Rana/Propus/Callisto/Heka/Deneb BL-C3)");
-   FMQ (1,15,  0, 5,     DA, "AMD Athlon II X2 (Regor)");
-   FMQ (1,15,  0, 5,     TA, "AMD Athlon II X3 (Rana)");
-   FMQ (1,15,  0, 5,     QA, "AMD Athlon II X4 (Propus)");
-   FMQ (1,15,  0, 5,     Tp, "AMD Phenom II Triple-Core (Heka)");
-   FMQ (1,15,  0, 5,     Qp, "AMD Phenom II Quad-Core (Deneb)");
-   FM  (1,15,  0, 5,         "AMD Athlon (unknown type) (Regor/Rana/Propus/Callisto/Heka/Deneb)");
-   FMSQ(1,15,  0, 6,  2, MS, "AMD Sempron Mobile (Sargas DA-C2)");
-   FMSQ(1,15,  0, 6,  2, dS, "AMD Sempron II (Sargas DA-C2)");
-   FMSQ(1,15,  0, 6,  2, MT, "AMD Turion II Dual-Core Mobile (Caspian DA-C2)");
-   FMSQ(1,15,  0, 6,  2, MA, "AMD Athlon II Dual-Core Mobile (Regor DA-C2)");
-   FMSQ(1,15,  0, 6,  2, DA, "AMD Athlon II X2 (Regor DA-C2)");
-   FMSQ(1,15,  0, 6,  2, dA, "AMD Athlon II (Sargas DA-C2)");
-   FMS (1,15,  0, 6,  2,     "AMD Athlon (unknown type) (Regor/Sargas/Caspain DA-C2)");
-   FMSQ(1,15,  0, 6,  3, Ms, "AMD V-Series Mobile (Champlain DA-C3)");
-   FMSQ(1,15,  0, 6,  3, DS, "AMD Sempron II X2 (Regor DA-C3)");
-   FMSQ(1,15,  0, 6,  3, dS, "AMD Sempron II (Sargas DA-C3)");
-   FMSQ(1,15,  0, 6,  3, MT, "AMD Turion II Dual-Core Mobile (Champlain DA-C3)");
-   FMSQ(1,15,  0, 6,  3, Mp, "AMD Phenom II Dual-Core Mobile (Champlain DA-C3)");
-   FMSQ(1,15,  0, 6,  3, MA, "AMD Athlon II Dual-Core Mobile (Champlain DA-C3)");
-   FMSQ(1,15,  0, 6,  3, DA, "AMD Athlon II X2 (Regor DA-C3)");
-   FMSQ(1,15,  0, 6,  3, dA, "AMD Athlon II (Sargas DA-C3)");
-   FMS (1,15,  0, 6,  3,     "AMD Athlon (unknown type) (Regor/Sargas/Champlain DA-C3)");
-   FMQ (1,15,  0, 6,     Ms, "AMD V-Series Mobile (Champlain)");
-   FMQ (1,15,  0, 6,     MS, "AMD Sempron Mobile (Sargas)");
-   FMQ (1,15,  0, 6,     DS, "AMD Sempron II X2 (Regor)");
-   FMQ (1,15,  0, 6,     dS, "AMD Sempron II (Sargas)");
-   FMQ (1,15,  0, 6,     MT, "AMD Turion II Dual-Core Mobile (Caspian / Champlain)");
-   FMQ (1,15,  0, 6,     Mp, "AMD Phenom II Dual-Core Mobile (Champlain)");
-   FMQ (1,15,  0, 6,     MA, "AMD Athlon II Dual-Core Mobile (Regor / Champlain)");
-   FMQ (1,15,  0, 6,     DA, "AMD Athlon II X2 (Regor)");
-   FMQ (1,15,  0, 6,     dA, "AMD Athlon II (Sargas)");
-   FM  (1,15,  0, 6,         "AMD Athlon (unknown type) (Regor/Sargas/Caspian/Champlain)");
-   FMSQ(1,15,  0, 8,  0, SO, "AMD Six-Core Opteron (Istanbul HY-D0)");
-   FMSQ(1,15,  0, 8,  0, sO, "AMD Opteron 4100 (Lisbon HY-D0)");
-   FMS (1,15,  0, 8,  0,     "AMD Opteron (unknown type) (Lisbon/Istanbul HY-D0)");
-   FMS (1,15,  0, 8,  1,     "AMD Opteron 4100 (Lisbon HY-D1)");
-   FMQ (1,15,  0, 8,     SO, "AMD Six-Core Opteron (Istanbul)");
-   FMQ (1,15,  0, 8,     sO, "AMD Opteron 4100 (Lisbon)");
-   FM  (1,15,  0, 8,         "AMD Opteron (unknown type) (Lisbon/Istanbul)");
-   FMS (1,15,  0, 9,  1,     "AMD Opteron 6100 (Magny-Cours HY-D1)");
-   FM  (1,15,  0, 9,         "AMD Opteron 6100 (Magny-Cours)");
-   FMSQ(1,15,  0,10,  0, Qp, "AMD Phenom II X4 (Zosma PH-E0)");
-   FMSQ(1,15,  0,10,  0, Sp, "AMD Phenom II X6 (Thuban PH-E0)");
-   FMS (1,15,  0,10,  0,     "AMD Phenom II (unknown type) (Zosma/Thuban PH-E0)");
-   FMQ (1,15,  0,10,     Qp, "AMD Phenom II X4 (Zosma)");
-   FMQ (1,15,  0,10,     Sp, "AMD Phenom II X6 (Thuban)");
-   FM  (1,15,  0,10,         "AMD Phenom II (unknown type) (Zosma/Thuban)");
-   F   (1,15,                "AMD (unknown model)");
-   FMSQ(2,15,  0, 3,  1, MU, "AMD Turion X2 Ultra Dual-Core Mobile (Griffin LG-B1)");
-   FMSQ(2,15,  0, 3,  1, MT, "AMD Turion X2 Dual-Core Mobile (Lion LG-B1)");
-   FMSQ(2,15,  0, 3,  1, DS, "AMD Sempron X2 Dual-Core (Sable LG-B1)");
-   FMSQ(2,15,  0, 3,  1, dS, "AMD Sempron (Sable LG-B1)");
-   FMSQ(2,15,  0, 3,  1, DA, "AMD Athlon X2 Dual-Core (Lion LG-B1)");
-   FMSQ(2,15,  0, 3,  1, dA, "AMD Athlon (Lion LG-B1)");
-   FMS (2,15,  0, 3,  1,     "AMD Athlon (unknown type) (Lion/Sable LG-B1)");
-   FMQ (2,15,  0, 3,     MU, "AMD Turion X2 Ultra (Griffin)");
-   FMQ (2,15,  0, 3,     MT, "AMD Turion X2 (Lion)");
-   FMQ (2,15,  0, 3,     DS, "AMD Sempron X2 Dual-Core (Sable)");
-   FMQ (2,15,  0, 3,     dS, "AMD Sempron (Sable)");
-   FMQ (2,15,  0, 3,     DA, "AMD Athlon X2 Dual-Core (Lion)");
-   FMQ (2,15,  0, 3,     dA, "AMD Athlon (Lion)");
-   FM  (2,15,  0, 3,         "AMD Athlon (unknown type) (Lion/Sable)");
-   F   (2,15,                "AMD (unknown model)");
-   FMSQ(3,15,  0, 1,  0, dS, "AMD Sempron Dual-Core (Llano LN-B0)");
-   FMSQ(3,15,  0, 1,  0, dA, "AMD Athlon II Dual-Core (Llano LN-B0)");
-   FMSQ(3,15,  0, 1,  0, Sa, "AMD A-Series (Llano LN-B0)");
-   FMSQ(3,15,  0, 1,  0, Se, "AMD E2-Series (Llano LN-B0)");
-   FMS (3,15,  0, 1,  0,     "AMD Athlon (unknown type) (Llano LN-B0)");
-   FMQ (3,15,  0, 1,     dS, "AMD Sempron Dual-Core (Llano)");
-   FMQ (3,15,  0, 1,     dA, "AMD Athlon II Dual-Core (Llano)");
-   FMQ (3,15,  0, 1,     Sa, "AMD A-Series (Llano)");
-   FMQ (3,15,  0, 1,     Se, "AMD E2-Series (Llano)");
-   FM  (3,15,  0, 1,         "AMD Athlon (unknown type) (Llano)");
-   F   (3,15,                "AMD (unknown model) (Llano)");
-   FMSQ(5,15,  0, 1,  0, Sc, "AMD C-Series (Ontario ON-B0)");
-   FMSQ(5,15,  0, 1,  0, Se, "AMD E-Series (Zacate ON-B0)");
-   FMSQ(5,15,  0, 1,  0, Sg, "AMD G-Series (Ontario/Zacate ON-B0)");
-   FMSQ(5,15,  0, 1,  0, Sz, "AMD Z-Series (Desna ON-B0)");
-   FMS (5,15,  0, 1,  0,     "AMD (unknown type) (Ontario/Zacate/Desna ON-B0)");
-   FM  (5,15,  0, 1,         "AMD (unknown type) (Ontario/Zacate/Desna)");
-   FMSQ(5,15,  0, 2,  0, Sc, "AMD C-Series (Ontario ON-C0)");
-   FMSQ(5,15,  0, 2,  0, Se, "AMD E-Series (Zacate ON-C0)");
-   FMSQ(5,15,  0, 2,  0, Sg, "AMD G-Series (Ontario/Zacate ON-C0)");
-   FMSQ(5,15,  0, 2,  0, Sz, "AMD Z-Series (Desna ON-C0)");
-   FMS (5,15,  0, 2,  0,     "AMD (unknown type) (Ontario/Zacate/Desna ON-C0)");
-   FM  (5,15,  0, 2,         "AMD (unknown type) (Ontario/Zacate/Desna)");
-   F   (5,15,                "AMD (unknown model)");
-   FMSQ(6,15,  0, 1,  2, sO, "AMD Opteron 6200 (Interlagos OR-B2) / Opteron 4200 (Valencia OR-B2) / Opteron 3200 (Zurich OR-B2)");
-   FMSQ(6,15,  0, 1,  2, df, "AMD FX-Series (Zambezi OR-B2)");
-   FMS (6,15,  0, 1,  2,     "AMD (unknown type) (Interlagos/Valencia/Zurich/Zambezi OR-B2)");
-   FMQ (6,15,  0, 1,     sO, "AMD Opteron 6200 (Interlagos) / Opteron 4200 (Valencia) / Opteron 3200 (Zurich)");
-   FMQ (6,15,  0, 1,     df, "AMD FX-Series (Zambezi)");
-   FM  (6,15,  0, 1,         "AMD (unknown type) (Interlagos/Valencia/Zurich/Zambezi)");
-   FMSQ(6,15,  0, 2,  0, sO, "AMD Opteron 6300 (Abu Dhabi OR-C0) / Opteron 4300 (Seoul OR-C0) / Opteron 3300 (Delhi OR-C0)");
-   FMSQ(6,15,  0, 2,  0, df, "AMD FX-Series (Vishera OR-C0)");
-   FMS (6,15,  0, 2,  0,     "AMD (unknown type) (Abu Dhabi/Seoul/Delhi/Vishera OR-C0)");
-   FMQ (6,15,  0, 2,     sO, "AMD Opteron 6300 (Abu Dhabi) / Opteron 4300 (Seoul) / Opteron 3300 (Delhi)");
-   FMQ (6,15,  0, 2,     df, "AMD FX-Series (Vishera)");
-   FM  (6,15,  0, 2,         "AMD (unknown type) (Abu Dhabi/Seoul/Delhi/Vishera)");
-   FMSQ(6,15,  1, 0,  1, Sa, "AMD A-Series (Trinity TN-A1)");
-   FMSQ(6,15,  1, 0,  1, Sr, "AMD R-Series (Trinity TN-A1)");
-   FMSQ(6,15,  1, 0,  1, dA, "AMD Athlon Dual-Core / Athlon Quad-Core (Trinity TN-A1)");
-   FMSQ(6,15,  1, 0,  1, dS, "AMD Sempron Dual-Core (Trinity TN-A1)");
-   FMSQ(6,15,  1, 0,  1, dI, "AMD FirePro (Trinity TN-A1)");
-   FMS (6,15,  1, 0,  1,     "AMD (unknown type) (Trinity TN-A1)");
-   FMQ (6,15,  1, 0,     Sa, "AMD A-Series (Trinity)");
-   FMQ (6,15,  1, 0,     Sr, "AMD R-Series (Trinity)");
-   FMQ (6,15,  1, 0,     dA, "AMD Athlon Dual-Core / Athlon Quad-Core (Trinity)");
-   FMQ (6,15,  1, 0,     dS, "AMD Sempron Dual-Core (Trinity)");
-   FMQ (6,15,  1, 0,     dI, "AMD FirePro (Trinity)");
-   FM  (6,15,  1, 0,         "AMD (unknown type) (Trinity TN-A1)");
-   FMSQ(6,15,  1, 3,  1, Sa, "AMD A-Series (Richland RL-A1)");
-   FMSQ(6,15,  1, 3,  1, Sr, "AMD R-Series (Richland RL-A1)");
-   FMSQ(6,15,  1, 3,  1, dA, "AMD Athlon Dual-Core / Athlon Quad-Core (Richland RL-A1)");
-   FMSQ(6,15,  1, 3,  1, dS, "AMD Sempron Dual-Core (Richland RL-A1)");
-   FMSQ(6,15,  1, 3,  1, dI, "AMD FirePro (Richland RL-A1)");
-   FMS (6,15,  1, 3,  1,     "AMD (unknown type) (Richland RL-A1)");
-   FMQ (6,15,  1, 3,     Sa, "AMD A-Series (Richland)");
-   FMQ (6,15,  1, 3,     Sr, "AMD R-Series (Richland)");
-   FMQ (6,15,  1, 3,     dA, "AMD Athlon Dual-Core / Athlon Quad-Core (Richland)");
-   FMQ (6,15,  1, 3,     dS, "AMD Sempron Dual-Core (Richland)");
-   FMQ (6,15,  1, 3,     dI, "AMD FirePro (Richland)");
-   FM  (6,15,  1, 3,         "AMD (unknown type) (Richland)");
-   FMSQ(6,15,  3, 0,  1, Sa, "AMD Elite Performance A-Series (Kaveri KV-A1)");
-   FMSQ(6,15,  3, 0,  1, Mr, "AMD Mobile R-Series (Kaveri KV-A1)");
-   FMSQ(6,15,  3, 0,  1, sO, "AMD Opteron X1200 / X2200 (Kaveri KV-A1)");
-   FMS (6,15,  3, 0,  1,     "AMD (unknown type) (Kaveri KV-A1)");
-   FMQ (6,15,  3, 0,     Sa, "AMD Elite Performance A-Series (Kaveri)");
-   FMQ (6,15,  3, 0,     Mr, "AMD Mobile R-Series (Kaveri)");
-   FMQ (6,15,  3, 0,     sO, "AMD Opteron X1200 / X2200 (Kaveri)");
-   FM  (6,15,  3, 0,         "AMD (unknown type) (Kaveri)");
-   FMQ (6,15,  3, 8,     Sa, "AMD A-Series (Godavari)");
-   FM  (6,15,  3, 8,         "AMD (unknown type) (Godavari)");
-   FMQ (6,15,  6, 5,     Sa, "AMD A-Series (Carrizo/Bristol Ridge/Stoney Ridge)"); // undocumented, but sample from Alexandros Couloumbis
-   FMQ (6,15,  6, 5,     Se, "AMD E-Series (Stoney Ridge)"); // undocumented, but sample from Alexandros Couloumbis
-   FMQ (6,15,  6, 5,     Sg, "AMD G-Series (Brown Falcon/Prairie Falcon)"); // undocumented, but sample from Alexandros Couloumbis
-   FM  (6,15,  6, 5,         "AMD (unknown type) (Carrizo/Bristol Ridge/Stoney Ridge/Toronto/Brown Falcon/Prairie Falcon)"); // undocumented, but sample from Alexandros Couloumbis
-   FMSQ(6,15,  7, 0,  0, Sa, "AMD A-Series (Carrizo/Bristol Ridge/Stoney Ridge ST-A0)");
-   FMSQ(6,15,  7, 0,  0, Se, "AMD E-Series (Stoney Ridge ST-A0)");
-   FMSQ(6,15,  7, 0,  0, Sg, "AMD G-Series (Brown Falcon/Prairie Falcon ST-A0)");
-   FMS (6,15,  7, 0,  0,     "AMD (unknown type) (Carrizo/Bristol Ridge/Stoney Ridge/Toronto/Brown Falcon/Prairie Falcon ST-A0)");
-   FMQ (6,15,  7, 0,     Sa, "AMD A-Series (Carrizo/Bristol Ridge/Stoney Ridge)");
-   FMQ (6,15,  7, 0,     Se, "AMD E-Series (Stoney Ridge)");
-   FMQ (6,15,  7, 0,     Sg, "AMD G-Series (Brown Falcon/Prairie Falcon)");
-   FM  (6,15,  7, 0,         "AMD (unknown type) (Carrizo/Bristol Ridge/Stoney Ridge/Toronto/Brown Falcon/Prairie Falcon)");
-   F   (6,15,                "AMD (unknown model)");
-   FMSQ(7,15,  0, 0,  1, dA, "AMD Athlon (Kabini KB-A1)");
-   FMSQ(7,15,  0, 0,  1, Sa, "AMD A-Series (Kabini/Temash KB-A1)");
-   FMSQ(7,15,  0, 0,  1, Se, "AMD E-Series (Kabini KB-A1)");
-   FMSQ(7,15,  0, 0,  1, Sg, "AMD G-Series (Kabini KB-A1)");
-   FMSQ(7,15,  0, 0,  1, sO, "AMD Opteron X1100/X2100 Series (Kyoto KB-A1)");
-   FMS (7,15,  0, 0,  1,     "AMD (unknown type) (Kabini/Temash/Kyoto KB-A1)");
-   FMQ (7,15,  0, 0,     dA, "AMD Athlon (Kabini)");
-   FMQ (7,15,  0, 0,     Sa, "AMD A-Series (Kabini/Temash)");
-   FMQ (7,15,  0, 0,     Se, "AMD E-Series (Kabini)");
-   FMQ (7,15,  0, 0,     Sg, "AMD G-Series (Kabini)");
-   FMQ (7,15,  0, 0,     sO, "AMD Opteron X1100/X2100 Series (Kyoto)");
-   FM  (7,15,  0, 0,         "AMD (unknown type) (Kabini/Temash/Kyoto)");
+   FM  ( 0, 4,  0, 3,         "AMD 80486DX2");
+   FM  ( 0, 4,  0, 7,         "AMD 80486DX2WB");
+   FM  ( 0, 4,  0, 8,         "AMD 80486DX4");
+   FM  ( 0, 4,  0, 9,         "AMD 80486DX4WB");
+   FM  ( 0, 4,  0,10,         "AMD Elan SC400"); // sandpile.org
+   FM  ( 0, 4,  0,14,         "AMD 5x86");
+   FM  ( 0, 4,  0,15,         "AMD 5xWB");
+   F   ( 0, 4,                "AMD 80486 / 5x (unknown model)");
+   FM  ( 0, 5,  0, 0,         "AMD SSA5 (PR75, PR90, PR100)");
+   FM  ( 0, 5,  0, 1,         "AMD 5k86 (PR120, PR133)");
+   FM  ( 0, 5,  0, 2,         "AMD 5k86 (PR166)");
+   FM  ( 0, 5,  0, 3,         "AMD 5k86 (PR200)");
+   FM  ( 0, 5,  0, 5,         "AMD Geode GX");
+   FM  ( 0, 5,  0, 6,         "AMD K6");
+   FM  ( 0, 5,  0, 7,         "AMD K6 (Little Foot)");
+   FMS ( 0, 5,  0, 8,  0,     "AMD K6-2 (Chomper A)");
+   FMS ( 0, 5,  0, 8, 12,     "AMD K6-2 (Chomper A)");
+   FM  ( 0, 5,  0, 8,         "AMD K6-2 (Chomper)");
+   FMS ( 0, 5,  0, 9,  1,     "AMD K6-III (Sharptooth B)");
+   FM  ( 0, 5,  0, 9,         "AMD K6-III (Sharptooth)");
+   FM  ( 0, 5,  0,10,         "AMD Geode LX");
+   FM  ( 0, 5,  0,13,         "AMD K6-2+, K6-III+");
+   F   ( 0, 5,                "AMD 5k86 / K6 / Geode (unknown model)");
+   FM  ( 0, 6,  0, 1,         "AMD Athlon (Argon)");
+   FM  ( 0, 6,  0, 2,         "AMD Athlon (K75 / Pluto / Orion)");
+   FMS ( 0, 6,  0, 3,  0,     "AMD Duron / mobile Duron (Spitfire A0)");
+   FMS ( 0, 6,  0, 3,  1,     "AMD Duron / mobile Duron (Spitfire A2)");
+   FM  ( 0, 6,  0, 3,         "AMD Duron / mobile Duron (Spitfire)");
+   FMS ( 0, 6,  0, 4,  2,     "AMD Athlon (Thunderbird A4-A7)");
+   FMS ( 0, 6,  0, 4,  4,     "AMD Athlon (Thunderbird A9)");
+   FM  ( 0, 6,  0, 4,         "AMD Athlon (Thunderbird)");
+   FMSQ( 0, 6,  0, 6,  0, sA, "AMD Athlon MP (Palomino A0)");
+   FMSQ( 0, 6,  0, 6,  0, dA, "AMD Athlon (Palomino A0)");
+   FMSQ( 0, 6,  0, 6,  0, MA, "AMD mobile Athlon 4 (Palomino A0)");
+   FMSQ( 0, 6,  0, 6,  0, sD, "AMD Duron MP (Palomino A0)");
+   FMSQ( 0, 6,  0, 6,  0, MD, "AMD mobile Duron (Palomino A0)");
+   FMS ( 0, 6,  0, 6,  0,     "AMD Athlon (unknown type)  (Palomino A0)");
+   FMSQ( 0, 6,  0, 6,  1, sA, "AMD Athlon MP (Palomino A2)");
+   FMSQ( 0, 6,  0, 6,  1, dA, "AMD Athlon (Palomino A2)");
+   FMSQ( 0, 6,  0, 6,  1, MA, "AMD mobile Athlon 4 (Palomino A2)");
+   FMSQ( 0, 6,  0, 6,  1, sD, "AMD Duron MP (Palomino A2)");
+   FMSQ( 0, 6,  0, 6,  1, MD, "AMD mobile Duron (Palomino A2)");
+   FMSQ( 0, 6,  0, 6,  1, dD, "AMD Duron (Palomino A2)");
+   FMS ( 0, 6,  0, 6,  1,     "AMD Athlon (unknown type) (Palomino A2)");
+   FMSQ( 0, 6,  0, 6,  2, sA, "AMD Athlon MP (Palomino A5)");
+   FMSQ( 0, 6,  0, 6,  2, dX, "AMD Athlon XP (Palomino A5)");
+   FMSQ( 0, 6,  0, 6,  2, MA, "AMD mobile Athlon 4 (Palomino A5)");
+   FMSQ( 0, 6,  0, 6,  2, sD, "AMD Duron MP (Palomino A5)");
+   FMSQ( 0, 6,  0, 6,  2, MD, "AMD mobile Duron (Palomino A5)");
+   FMSQ( 0, 6,  0, 6,  2, dD, "AMD Duron (Palomino A5)");
+   FMS ( 0, 6,  0, 6,  2,     "AMD Athlon (unknown type) (Palomino A5)");
+   FMQ ( 0, 6,  0, 6,     MD, "AMD mobile Duron (Palomino)");
+   FMQ ( 0, 6,  0, 6,     dD, "AMD Duron (Palomino)");
+   FMQ ( 0, 6,  0, 6,     MA, "AMD mobile Athlon (Palomino)");
+   FMQ ( 0, 6,  0, 6,     dX, "AMD Athlon XP (Palomino)");
+   FMQ ( 0, 6,  0, 6,     dA, "AMD Athlon (Palomino)");
+   FM  ( 0, 6,  0, 6,         "AMD Athlon (unknown type) (Palomino)");
+   FMSQ( 0, 6,  0, 7,  0, sD, "AMD Duron MP (Morgan A0)");
+   FMSQ( 0, 6,  0, 7,  0, MD, "AMD mobile Duron (Morgan A0)");
+   FMSQ( 0, 6,  0, 7,  0, dD, "AMD Duron (Morgan A0)");
+   FMS ( 0, 6,  0, 7,  0,     "AMD Duron (unknown type)  (Morgan A0)");
+   FMSQ( 0, 6,  0, 7,  1, sD, "AMD Duron MP (Morgan A1)");
+   FMSQ( 0, 6,  0, 7,  1, MD, "AMD mobile Duron (Morgan A1)");
+   FMSQ( 0, 6,  0, 7,  1, dD, "AMD Duron (Morgan A1)");
+   FMS ( 0, 6,  0, 7,  1,     "AMD Duron (unknown type)  (Morgan A1)");
+   FMQ ( 0, 6,  0, 7,     sD, "AMD Duron MP (Morgan)");
+   FMQ ( 0, 6,  0, 7,     MD, "AMD mobile Duron (Morgan)");
+   FMQ ( 0, 6,  0, 7,     dD, "AMD Duron (Morgan)");
+   FM  ( 0, 6,  0, 7,         "AMD Duron (unknown type)  (Morgan)");
+   FMSQ( 0, 6,  0, 8,  0, dS, "AMD Sempron (Thoroughbred A0)");
+   FMSQ( 0, 6,  0, 8,  0, sD, "AMD Duron MP (Applebred A0)");
+   FMSQ( 0, 6,  0, 8,  0, dD, "AMD Duron (Applebred A0)");
+   FMSQ( 0, 6,  0, 8,  0, MX, "AMD mobile Athlon XP (Thoroughbred A0)");
+   FMSQ( 0, 6,  0, 8,  0, sA, "AMD Athlon MP (Thoroughbred A0)");
+   FMSQ( 0, 6,  0, 8,  0, dX, "AMD Athlon XP (Thoroughbred A0)");
+   FMSQ( 0, 6,  0, 8,  0, dA, "AMD Athlon (Thoroughbred A0)");
+   FMS ( 0, 6,  0, 8,  0,     "AMD Athlon (unknown type) (Thoroughbred A0)");
+   FMSQ( 0, 6,  0, 8,  1, MG, "AMD Geode NX (Thoroughbred B0)");
+   FMSQ( 0, 6,  0, 8,  1, dS, "AMD Sempron (Thoroughbred B0)");
+   FMSQ( 0, 6,  0, 8,  1, sD, "AMD Duron MP (Applebred B0)");
+   FMSQ( 0, 6,  0, 8,  1, dD, "AMD Duron (Applebred B0)");
+   FMSQ( 0, 6,  0, 8,  1, sA, "AMD Athlon MP (Thoroughbred B0)");
+   FMSQ( 0, 6,  0, 8,  1, dX, "AMD Athlon XP (Thoroughbred B0)");
+   FMSQ( 0, 6,  0, 8,  1, dA, "AMD Athlon (Thoroughbred B0)");
+   FMS ( 0, 6,  0, 8,  1,     "AMD Athlon (unknown type) (Thoroughbred B0)");
+   FMQ ( 0, 6,  0, 8,     MG, "AMD Geode NX (Thoroughbred)");
+   FMQ ( 0, 6,  0, 8,     dS, "AMD Sempron (Thoroughbred)");
+   FMQ ( 0, 6,  0, 8,     sD, "AMD Duron MP (Thoroughbred)");
+   FMQ ( 0, 6,  0, 8,     dD, "AMD Duron (Thoroughbred)");
+   FMQ ( 0, 6,  0, 8,     MX, "AMD mobile Athlon XP (Thoroughbred)");
+   FMQ ( 0, 6,  0, 8,     sA, "AMD Athlon MP (Thoroughbred)");
+   FMQ ( 0, 6,  0, 8,     dX, "AMD Athlon XP (Thoroughbred)");
+   FMQ ( 0, 6,  0, 8,     dA, "AMD Athlon XP (Thoroughbred)");
+   FM  ( 0, 6,  0, 8,         "AMD Athlon (unknown type) (Thoroughbred)");
+   FMSQ( 0, 6,  0,10,  0, dS, "AMD Sempron (Barton A2)");
+   FMSQ( 0, 6,  0,10,  0, ML, "AMD mobile Athlon XP-M (LV) (Barton A2)");
+   FMSQ( 0, 6,  0,10,  0, MX, "AMD mobile Athlon XP-M (Barton A2)");
+   FMSQ( 0, 6,  0,10,  0, dt, "AMD Athlon XP (Thorton A2)");
+   FMSQ( 0, 6,  0,10,  0, sA, "AMD Athlon MP (Barton A2)");
+   FMSQ( 0, 6,  0,10,  0, dX, "AMD Athlon XP (Barton A2)");
+   FMS ( 0, 6,  0,10,  0,     "AMD Athlon (unknown type) (Barton A2)");
+   FMQ ( 0, 6,  0,10,     dS, "AMD Sempron (Barton)");
+   FMQ ( 0, 6,  0,10,     ML, "AMD mobile Athlon XP-M (LV) (Barton)");
+   FMQ ( 0, 6,  0,10,     MX, "AMD mobile Athlon XP-M (Barton)");
+   FMQ ( 0, 6,  0,10,     sA, "AMD Athlon MP (Barton)");
+   FMQ ( 0, 6,  0,10,     dX, "AMD Athlon XP (Barton)");
+   FM  ( 0, 6,  0,10,         "AMD Athlon (unknown type) (Barton)");
+   F   ( 0, 6,                "AMD Athlon (unknown model)");
+   F   ( 0, 7,                "AMD Opteron (unknown model)");
+   FMS ( 0,15,  0, 4,  0,     "AMD Athlon 64 (SledgeHammer SH7-B0)");
+   FMSQ( 0,15,  0, 4,  8, MX, "AMD mobile Athlon XP-M (SledgeHammer SH7-C0)");
+   FMSQ( 0,15,  0, 4,  8, MA, "AMD mobile Athlon 64 (SledgeHammer SH7-C0)");
+   FMSQ( 0,15,  0, 4,  8, dA, "AMD Athlon 64 (SledgeHammer SH7-C0)");
+   FMS ( 0,15,  0, 4,  8,     "AMD Athlon 64 (unknown type) (SledgeHammer SH7-C0)");
+   FMSQ( 0,15,  0, 4, 10, MX, "AMD mobile Athlon XP-M (SledgeHammer SH7-CG)");
+   FMSQ( 0,15,  0, 4, 10, MA, "AMD mobile Athlon 64 (SledgeHammer SH7-CG)");
+   FMSQ( 0,15,  0, 4, 10, dA, "AMD Athlon 64 (SledgeHammer SH7-CG)");
+   FMS ( 0,15,  0, 4, 10,     "AMD Athlon 64 (unknown type) (SledgeHammer SH7-CG)");
+   FMQ ( 0,15,  0, 4,     MX, "AMD mobile Athlon XP-M (SledgeHammer SH7)");
+   FMQ ( 0,15,  0, 4,     MA, "AMD mobile Athlon 64 (SledgeHammer SH7)");
+   FMQ ( 0,15,  0, 4,     dA, "AMD Athlon 64 (SledgeHammer SH7)");
+   FM  ( 0,15,  0, 4,         "AMD Athlon 64 (unknown type) (SledgeHammer SH7)");
+   FMS ( 0,15,  0, 5,  0,     "AMD Opteron (DP SledgeHammer SH7-B0)");
+   FMS ( 0,15,  0, 5,  1,     "AMD Opteron (DP SledgeHammer SH7-B3)");
+   FMSQ( 0,15,  0, 5,  8, sO, "AMD Opteron (DP SledgeHammer SH7-C0)");
+   FMSQ( 0,15,  0, 5,  8, dF, "AMD Athlon 64 FX (DP SledgeHammer SH7-C0)");
+   FMS ( 0,15,  0, 5,  8,     "AMD Athlon 64 (unknown type) (DP SledgeHammer SH7-C0)");
+   FMSQ( 0,15,  0, 5, 10, sO, "AMD Opteron (DP SledgeHammer SH7-CG)");
+   FMSQ( 0,15,  0, 5, 10, dF, "AMD Athlon 64 FX (DP SledgeHammer SH7-CG)");
+   FMS ( 0,15,  0, 5, 10,     "AMD Athlon 64 (unknown type) (DP SledgeHammer SH7-CG)");
+   FMQ ( 0,15,  0, 5,     sO, "AMD Opteron (SledgeHammer SH7)");
+   FMQ ( 0,15,  0, 5,     dF, "AMD Athlon 64 FX (SledgeHammer SH7)");
+   FM  ( 0,15,  0, 5,         "AMD Athlon 64 (unknown type) (SledgeHammer SH7) FX");
+   FMSQ( 0,15,  0, 7, 10, dF, "AMD Athlon 64 FX (DP SledgeHammer SH7-CG)");
+   FMSQ( 0,15,  0, 7, 10, dA, "AMD Athlon 64 (DP SledgeHammer SH7-CG)");
+   FMS ( 0,15,  0, 7, 10,     "AMD Athlon 64 (unknown type) (DP SledgeHammer SH7-CG)");
+   FMQ ( 0,15,  0, 7,     dF, "AMD Athlon 64 FX (DP SledgeHammer SH7)");
+   FMQ ( 0,15,  0, 7,     dA, "AMD Athlon 64 (DP SledgeHammer SH7)");
+   FM  ( 0,15,  0, 7,         "AMD Athlon 64 (unknown type) (DP SledgeHammer SH7)");
+   FMSQ( 0,15,  0, 8,  2, MS, "AMD mobile Sempron (ClawHammer CH7-CG)");
+   FMSQ( 0,15,  0, 8,  2, MX, "AMD mobile Athlon XP-M (ClawHammer CH7-CG)");
+   FMSQ( 0,15,  0, 8,  2, MA, "AMD mobile Athlon 64 (Odessa CH7-CG)");
+   FMSQ( 0,15,  0, 8,  2, dA, "AMD Athlon 64 (ClawHammer CH7-CG)");
+   FMS ( 0,15,  0, 8,  2,     "AMD Athlon 64 (unknown type) (ClawHammer/Odessa CH7-CG)");
+   FMQ ( 0,15,  0, 8,     MS, "AMD mobile Sempron (Odessa CH7)");
+   FMQ ( 0,15,  0, 8,     MX, "AMD mobile Athlon XP-M (Odessa CH7)");
+   FMQ ( 0,15,  0, 8,     MA, "AMD mobile Athlon 64 (Odessa CH7)");
+   FMQ ( 0,15,  0, 8,     dA, "AMD Athlon 64 (ClawHammer CH7)");
+   FM  ( 0,15,  0, 8,         "AMD Athlon 64 (unknown type) (ClawHammer/Odessa CH7)");
+   FMS ( 0,15,  0,11,  2,     "AMD Athlon 64 (ClawHammer CH7-CG)");
+   FM  ( 0,15,  0,11,         "AMD Athlon 64 (ClawHammer CH7)");
+   FMSQ( 0,15,  0,12,  0, MS, "AMD mobile Sempron (Dublin DH7-CG)");
+   FMSQ( 0,15,  0,12,  0, dS, "AMD Sempron (Paris DH7-CG)");
+   FMSQ( 0,15,  0,12,  0, MX, "AMD mobile Athlon XP-M (ClawHammer/Odessa DH7-CG)");
+   FMSQ( 0,15,  0,12,  0, MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7-CG)");
+   FMSQ( 0,15,  0,12,  0, dA, "AMD Athlon 64 (NewCastle DH7-CG)");
+   FMS ( 0,15,  0,12,  0,     "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris/Dublin DH7-CG)");
+   FMQ ( 0,15,  0,12,     MS, "AMD mobile Sempron (Dublin DH7)");
+   FMQ ( 0,15,  0,12,     dS, "AMD Sempron (Paris DH7)");
+   FMQ ( 0,15,  0,12,     MX, "AMD mobile Athlon XP-M (NewCastle DH7)");
+   FMQ ( 0,15,  0,12,     MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7)");
+   FMQ ( 0,15,  0,12,     dA, "AMD Athlon 64 (NewCastle DH7)");
+   FM  ( 0,15,  0,12,         "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris/Dublin DH7)");
+   FMSQ( 0,15,  0,14,  0, MS, "AMD mobile Sempron (Dublin DH7-CG)");
+   FMSQ( 0,15,  0,14,  0, dS, "AMD Sempron (Paris DH7-CG)");
+   FMSQ( 0,15,  0,14,  0, MX, "AMD mobile Athlon XP-M (ClawHammer/Odessa DH7-CG)");
+   FMSQ( 0,15,  0,14,  0, MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7-CG)");
+   FMSQ( 0,15,  0,14,  0, dA, "AMD Athlon 64 (NewCastle DH7-CG)");
+   FMS ( 0,15,  0,14,  0,     "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris/Dublin DH7-CG)");
+   FMQ ( 0,15,  0,14,     dS, "AMD Sempron (Paris DH7)");
+   FMQ ( 0,15,  0,14,     MS, "AMD mobile Sempron (Dublin DH7)");
+   FMQ ( 0,15,  0,14,     MX, "AMD mobile Athlon XP-M (ClawHammer/Odessa DH7)");
+   FMQ ( 0,15,  0,14,     MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7)");
+   FMQ ( 0,15,  0,14,     dA, "AMD Athlon 64 (NewCastle DH7)");
+   FM  ( 0,15,  0,14,         "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris/Dublin DH7)");
+   FMSQ( 0,15,  0,15,  0, dS, "AMD Sempron (Paris DH7-CG)");
+   FMSQ( 0,15,  0,15,  0, MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7-CG)");
+   FMSQ( 0,15,  0,15,  0, dA, "AMD Athlon 64 (NewCastle DH7-CG)");
+   FMS ( 0,15,  0,15,  0,     "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris DH7-CG)");
+   FMQ ( 0,15,  0,15,     dS, "AMD Sempron (Paris DH7)");
+   FMQ ( 0,15,  0,15,     MA, "AMD mobile Athlon 64 (ClawHammer/Odessa DH7)");
+   FMQ ( 0,15,  0,15,     dA, "AMD Athlon 64 (NewCastle DH7)");
+   FM  ( 0,15,  0,15,         "AMD Athlon 64 (unknown type) (ClawHammer/Odessa/NewCastle/Paris DH7)");
+   FMSQ( 0,15,  1, 4,  0, MX, "AMD mobile Athlon XP-M (Oakville SH7-D0)");
+   FMSQ( 0,15,  1, 4,  0, MA, "AMD mobile Athlon 64 (Oakville SH7-D0)");
+   FMSQ( 0,15,  1, 4,  0, dA, "AMD Athlon 64 (Winchester SH7-D0)");
+   FMS ( 0,15,  1, 4,  0,     "AMD Athlon 64 (unknown type) (Winchester/Oakville SH7-D0)");
+   FMQ ( 0,15,  1, 4,     MX, "AMD mobile Athlon XP-M (Oakville SH7)");
+   FMQ ( 0,15,  1, 4,     MA, "AMD mobile Athlon 64 (Oakville SH7)");
+   FMQ ( 0,15,  1, 4,     dA, "AMD Athlon 64 (Winchester SH7)");
+   FM  ( 0,15,  1, 4,         "AMD Athlon 64 (unknown type) (Winchester/Oakville SH7)");
+   FMSQ( 0,15,  1, 5,  0, sO, "AMD Opteron (Winchester SH7-D0)");
+   FMSQ( 0,15,  1, 5,  0, dF, "AMD Athlon 64 FX (Winchester SH7-D0)");
+   FMS ( 0,15,  1, 5,  0,     "AMD Athlon 64 (unknown type) (Winchester SH7-D0)");
+   FMQ ( 0,15,  1, 5,     sO, "AMD Opteron (Winchester SH7)");
+   FMQ ( 0,15,  1, 5,     dF, "AMD Athlon 64 FX (Winchester SH7)");
+   FM  ( 0,15,  1, 5,         "AMD Athlon 64 (unknown type) (Winchester SH7)");
+   FMSQ( 0,15,  1, 7,  0, dF, "AMD Athlon 64 FX (Winchester SH7-D0)");
+   FMSQ( 0,15,  1, 7,  0, dA, "AMD Athlon 64 (Winchester SH7-D0)");
+   FMS ( 0,15,  1, 7,  0,     "AMD Athlon 64 (unknown type) (Winchester SH7-D0)");
+   FMQ ( 0,15,  1, 7,     dF, "AMD Athlon 64 FX (Winchester SH7)");
+   FMQ ( 0,15,  1, 7,     dA, "AMD Athlon 64 (Winchester SH7)");
+   FM  ( 0,15,  1, 7,         "AMD Athlon 64 (unknown type) (Winchester SH7)");
+   FMSQ( 0,15,  1, 8,  0, MS, "AMD mobile Sempron (Georgetown/Sonora CH-D0)");
+   FMSQ( 0,15,  1, 8,  0, MX, "AMD mobile Athlon XP-M (Oakville CH-D0)");
+   FMSQ( 0,15,  1, 8,  0, MA, "AMD mobile Athlon 64 (Oakville CH-D0)");
+   FMSQ( 0,15,  1, 8,  0, dA, "AMD Athlon 64 (Winchester CH-D0)");
+   FMS ( 0,15,  1, 8,  0,     "AMD Athlon 64 (unknown type) (Winchester/Oakville/Georgetown/Sonora CH-D0)");
+   FMQ ( 0,15,  1, 8,     MS, "AMD mobile Sempron (Georgetown/Sonora CH)");
+   FMQ ( 0,15,  1, 8,     MX, "AMD mobile Athlon XP-M (Oakville CH)");
+   FMQ ( 0,15,  1, 8,     MA, "AMD mobile Athlon 64 (Oakville CH)");
+   FMQ ( 0,15,  1, 8,     dA, "AMD Athlon 64 (Winchester CH)");
+   FM  ( 0,15,  1, 8,         "AMD Athlon 64 (unknown type) (Winchester/Oakville/Georgetown/Sonora CH)");
+   FMS ( 0,15,  1,11,  0,     "AMD Athlon 64 (Winchester CH-D0)");
+   FM  ( 0,15,  1,11,         "AMD Athlon 64 (Winchester CH)");
+   FMSQ( 0,15,  1,12,  0, MS, "AMD mobile Sempron (Georgetown/Sonora DH8-D0)");
+   FMSQ( 0,15,  1,12,  0, dS, "AMD Sempron (Palermo DH8-D0)");
+   FMSQ( 0,15,  1,12,  0, MX, "AMD Athlon XP-M (Winchester DH8-D0)");
+   FMSQ( 0,15,  1,12,  0, MA, "AMD mobile Athlon 64 (Oakville DH8-D0)");
+   FMSQ( 0,15,  1,12,  0, dA, "AMD Athlon 64 (Winchester DH8-D0)");
+   FMS ( 0,15,  1,12,  0,     "AMD Athlon 64 (unknown type) (Winchester/Oakville/Georgetown/Sonora/Palermo DH8-D0)");
+   FMQ ( 0,15,  1,12,     MS, "AMD mobile Sempron (Georgetown/Sonora DH8)");
+   FMQ ( 0,15,  1,12,     dS, "AMD Sempron (Palermo DH8)");
+   FMQ ( 0,15,  1,12,     MX, "AMD Athlon XP-M (Winchester DH8)");
+   FMQ ( 0,15,  1,12,     MA, "AMD mobile Athlon 64 (Oakville DH8)");
+   FMQ ( 0,15,  1,12,     dA, "AMD Athlon 64 (Winchester DH8)");
+   FM  ( 0,15,  1,12,         "AMD Athlon 64 (Winchester/Oakville/Georgetown/Sonora/Palermo DH8)");
+   FMSQ( 0,15,  1,15,  0, dS, "AMD Sempron (Palermo DH8-D0)");
+   FMSQ( 0,15,  1,15,  0, dA, "AMD Athlon 64 (Winchester DH8-D0)");
+   FMS ( 0,15,  1,15,  0,     "AMD Athlon 64 (Winchester DH8-D0) / Sempron (Palermo DH8-D0)");
+   FMQ ( 0,15,  1,15,     dS, "AMD Sempron (Palermo DH8)");
+   FMQ ( 0,15,  1,15,     dA, "AMD Athlon 64 (Winchester DH8)");
+   FM  ( 0,15,  1,15,         "AMD Athlon 64 (unknown type) (Winchester/Palermo DH8)");
+   FMSQ( 0,15,  2, 1,  0, s8, "AMD Dual Core Opteron (Egypt JH-E1)");
+   FMSQ( 0,15,  2, 1,  0, sO, "AMD Dual Core Opteron (Italy JH-E1)");
+   FMS ( 0,15,  2, 1,  0,     "AMD Dual Core Opteron (Italy/Egypt JH-E1)");
+   FMSQ( 0,15,  2, 1,  2, s8, "AMD Dual Core Opteron (Egypt JH-E6)");
+   FMSQ( 0,15,  2, 1,  2, sO, "AMD Dual Core Opteron (Italy JH-E6)");
+   FMS ( 0,15,  2, 1,  2,     "AMD Dual Core Opteron (Italy/Egypt JH-E6)");
+   FMQ ( 0,15,  2, 1,     s8, "AMD Dual Core Opteron (Egypt JH)");
+   FMQ ( 0,15,  2, 1,     sO, "AMD Dual Core Opteron (Italy JH)");
+   FM  ( 0,15,  2, 1,         "AMD Dual Core Opteron (Italy/Egypt JH)");
+   FMSQ( 0,15,  2, 3,  2, DO, "AMD Dual Core Opteron (Denmark JH-E6)");
+   FMSQ( 0,15,  2, 3,  2, dF, "AMD Athlon 64 FX (Toledo JH-E6)");
+   FMSQ( 0,15,  2, 3,  2, dm, "AMD Athlon 64 X2 (Manchester JH-E6)");
+   FMSQ( 0,15,  2, 3,  2, dA, "AMD Athlon 64 X2 (Toledo JH-E6)");
+   FMS ( 0,15,  2, 3,  2,     "AMD Athlon 64 (unknown type) (Toledo/Manchester/Denmark JH-E6)");
+   FMQ ( 0,15,  2, 3,     sO, "AMD Dual Core Opteron (Denmark JH)");
+   FMQ ( 0,15,  2, 3,     dF, "AMD Athlon 64 FX (Toledo JH)");
+   FMQ ( 0,15,  2, 3,     dm, "AMD Athlon 64 X2 (Manchester JH)");
+   FMQ ( 0,15,  2, 3,     dA, "AMD Athlon 64 X2 (Toledo JH)");
+   FM  ( 0,15,  2, 3,         "AMD Athlon 64 (unknown type) (Toledo/Manchester/Denmark JH)");
+   FMSQ( 0,15,  2, 4,  2, MA, "AMD mobile Athlon 64 (Newark SH-E5)");
+   FMSQ( 0,15,  2, 4,  2, MT, "AMD mobile Turion (Lancaster/Richmond SH-E5)");
+   FMS ( 0,15,  2, 4,  2,     "AMD mobile Athlon 64 (unknown type) (Newark/Lancaster/Richmond SH-E5)");
+   FMQ ( 0,15,  2, 4,     MA, "AMD mobile Athlon 64 (Newark SH)");
+   FMQ ( 0,15,  2, 4,     MT, "AMD mobile Turion (Lancaster/Richmond SH)");
+   FM  ( 0,15,  2, 4,         "AMD mobile Athlon 64 (unknown type) (Newark/Lancaster/Richmond SH)");
+   FMQ ( 0,15,  2, 5,     s8, "AMD Opteron (Athens SH-E4)");
+   FMQ ( 0,15,  2, 5,     sO, "AMD Opteron (Troy SH-E4)");
+   FM  ( 0,15,  2, 5,         "AMD Opteron (Troy/Athens SH-E4)");
+   FMSQ( 0,15,  2, 7,  1, sO, "AMD Opteron (Venus SH-E4)");
+   FMSQ( 0,15,  2, 7,  1, dF, "AMD Athlon 64 FX (San Diego SH-E4)");
+   FMSQ( 0,15,  2, 7,  1, dA, "AMD Athlon 64 (San Diego SH-E4)");
+   FMS ( 0,15,  2, 7,  1,     "AMD Athlon 64 (unknown type) (Venus/San Diego SH-E4)");
+   FMQ ( 0,15,  2, 7,     sO, "AMD Opteron (San Diego SH)");
+   FMQ ( 0,15,  2, 7,     dF, "AMD Athlon 64 FX (San Diego SH)");
+   FMQ ( 0,15,  2, 7,     dA, "AMD Athlon 64 (San Diego SH)");
+   FM  ( 0,15,  2, 7,         "AMD Athlon 64 (unknown type) (San Diego SH)");
+   FM  ( 0,15,  2,11,         "AMD Athlon 64 X2 (Manchester BH-E4)");
+   FMS ( 0,15,  2,12,  0,     "AMD Sempron (Palermo DH-E3)");
+   FMSQ( 0,15,  2,12,  2, MS, "AMD mobile Sempron (Albany/Roma DH-E6)");
+   FMSQ( 0,15,  2,12,  2, dS, "AMD Sempron (Palermo DH-E6)");
+   FMSQ( 0,15,  2,12,  2, dA, "AMD Athlon 64 (Venice DH-E6)");
+   FMS ( 0,15,  2,12,  2,     "AMD Athlon 64 (Venice/Palermo/Albany/Roma DH-E6)");
+   FMQ ( 0,15,  2,12,     MS, "AMD mobile Sempron (Albany/Roma DH)");
+   FMQ ( 0,15,  2,12,     dS, "AMD Sempron (Palermo DH)");
+   FMQ ( 0,15,  2,12,     dA, "AMD Athlon 64 (Venice DH)");
+   FM  ( 0,15,  2,12,         "AMD Athlon 64 (Venice/Palermo/Albany/Roma DH)");
+   FMSQ( 0,15,  2,15,  0, dS, "AMD Sempron (Palermo DH-E3)");
+   FMSQ( 0,15,  2,15,  0, dA, "AMD Athlon 64 (Venice DH-E3)");
+   FMS ( 0,15,  2,15,  0,     "AMD Athlon 64 (Venice/Palermo DH-E3)");
+   FMSQ( 0,15,  2,15,  2, dS, "AMD Sempron (Palermo DH-E6)");
+   FMSQ( 0,15,  2,15,  2, dA, "AMD Athlon 64 (Venice DH-E6)");
+   FMS ( 0,15,  2,15,  2,     "AMD Athlon 64 (Venice/Palermo DH-E6)");
+   FMQ ( 0,15,  2,15,     dS, "AMD Sempron (Palermo DH)");
+   FMQ ( 0,15,  2,15,     dA, "AMD Athlon 64 (Venice DH)");
+   FM  ( 0,15,  2,15,         "AMD Athlon 64 (Venice/Palermo DH)");
+   FMS ( 0,15,  4, 1,  2,     "AMD Dual-Core Opteron (Santa Rosa JH-F2)");
+   FMS ( 0,15,  4, 1,  3,     "AMD Dual-Core Opteron (Santa Rosa JH-F3)");
+   FM  ( 0,15,  4, 1,         "AMD Dual-Core Opteron (Santa Rosa)");
+   FMSQ( 0,15,  4, 3,  2, DO, "AMD Dual-Core Opteron (Santa Rosa JH-F2)");
+   FMSQ( 0,15,  4, 3,  2, sO, "AMD Opteron (Santa Rosa JH-F2)");
+   FMSQ( 0,15,  4, 3,  2, dF, "AMD Athlon 64 FX Dual-Core (Windsor JH-F2)");
+   FMSQ( 0,15,  4, 3,  2, dA, "AMD Athlon 64 X2 Dual-Core (Windsor JH-F2)");
+   FMS ( 0,15,  4, 3,  2,     "AMD Athlon 64 (unknown type) (Windsor JH-F2)");
+   FMSQ( 0,15,  4, 3,  3, DO, "AMD Dual-Core Opteron (Santa Rosa JH-F3)");
+   FMSQ( 0,15,  4, 3,  3, sO, "AMD Opteron (Santa Rosa JH-F3)");
+   FMSQ( 0,15,  4, 3,  3, dF, "AMD Athlon 64 FX Dual-Core (Windsor JH-F3)");
+   FMSQ( 0,15,  4, 3,  3, dA, "AMD Athlon 64 X2 Dual-Core (Windsor JH-F3)");
+   FMS ( 0,15,  4, 3,  3,     "AMD Athlon 64 (unknown type) (Windsor/Santa Rosa JH-F3)");
+   FMQ ( 0,15,  4, 3,     DO, "AMD Dual-Core Opteron (Santa Rosa)");
+   FMQ ( 0,15,  4, 3,     sO, "AMD Opteron (Santa Rosa)");
+   FMQ ( 0,15,  4, 3,     dF, "AMD Athlon 64 FX Dual-Core (Windsor)");
+   FMQ ( 0,15,  4, 3,     dA, "AMD Athlon 64 X2 Dual-Core (Windsor)");
+   FM  ( 0,15,  4, 3,         "AMD Athlon 64 (unknown type) (Windsor/Santa Rosa)");
+   FMSQ( 0,15,  4, 8,  2, dA, "AMD Athlon 64 X2 Dual-Core (Windsor BH-F2)");
+   FMSQ( 0,15,  4, 8,  2, Mt, "AMD Turion 64 X2 (Trinidad BH-F2)");
+   FMSQ( 0,15,  4, 8,  2, MT, "AMD Turion 64 X2 (Taylor BH-F2)");
+   FMS ( 0,15,  4, 8,  2,     "AMD Athlon 64 (unknown type) (Windsor/Taylor/Trinidad BH-F2)");
+   FMQ ( 0,15,  4, 8,     dA, "AMD Athlon 64 X2 Dual-Core (Windsor)");
+   FMQ ( 0,15,  4, 8,     Mt, "AMD Turion 64 X2 (Trinidad)");
+   FMQ ( 0,15,  4, 8,     MT, "AMD Turion 64 X2 (Taylor)");
+   FM  ( 0,15,  4, 8,         "AMD Athlon 64 (unknown type) (Windsor/Taylor/Trinidad)");
+   FMS ( 0,15,  4,11,  2,     "AMD Athlon 64 X2 Dual-Core (Windsor BH-F2)");
+   FM  ( 0,15,  4,11,         "AMD Athlon 64 X2 Dual-Core (Windsor)");
+   FMSQ( 0,15,  4,12,  2, MS, "AMD mobile Sempron (Keene BH-F2)");
+   FMSQ( 0,15,  4,12,  2, dS, "AMD Sempron (Manila BH-F2)");
+   FMSQ( 0,15,  4,12,  2, Mt, "AMD Turion (Trinidad BH-F2)");
+   FMSQ( 0,15,  4,12,  2, MT, "AMD Turion (Taylor BH-F2)");
+   FMSQ( 0,15,  4,12,  2, dA, "AMD Athlon 64 (Orleans BH-F2)"); 
+   FMS ( 0,15,  4,12,  2,     "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene/Taylor/Trinidad BH-F2)");
+   FMQ ( 0,15,  4,12,     MS, "AMD mobile Sempron (Keene)");
+   FMQ ( 0,15,  4,12,     dS, "AMD Sempron (Manila)");
+   FMQ ( 0,15,  4,12,     Mt, "AMD Turion (Trinidad)");
+   FMQ ( 0,15,  4,12,     MT, "AMD Turion (Taylor)");
+   FMQ ( 0,15,  4,12,     dA, "AMD Athlon 64 (Orleans)"); 
+   FM  ( 0,15,  4,12,         "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene/Taylor/Trinidad)");
+   FMSQ( 0,15,  4,15,  2, MS, "AMD mobile Sempron (Keene DH-F2)");
+   FMSQ( 0,15,  4,15,  2, dS, "AMD Sempron (Manila DH-F2)");
+   FMSQ( 0,15,  4,15,  2, dA, "AMD Athlon 64 (Orleans DH-F2)");
+   FMS ( 0,15,  4,15,  2,     "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene DH-F2)");
+   FMQ ( 0,15,  4,15,     MS, "AMD mobile Sempron (Keene)");
+   FMQ ( 0,15,  4,15,     dS, "AMD Sempron (Manila)");
+   FMQ ( 0,15,  4,15,     dA, "AMD Athlon 64 (Orleans)");
+   FM  ( 0,15,  4,15,         "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene)");
+   FMS ( 0,15,  5,13,  3,     "AMD Opteron (Santa Rosa JH-F3)");
+   FM  ( 0,15,  5,13,         "AMD Opteron (Santa Rosa)");
+   FMSQ( 0,15,  5,15,  2, MS, "AMD mobile Sempron (Keene DH-F2)");
+   FMSQ( 0,15,  5,15,  2, dS, "AMD Sempron (Manila DH-F2)");
+   FMSQ( 0,15,  5,15,  2, dA, "AMD Athlon 64 (Orleans DH-F2)");
+   FMS ( 0,15,  5,15,  2,     "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene DH-F2)");
+   FMS ( 0,15,  5,15,  3,     "AMD Athlon 64 (Orleans DH-F3)");
+   FMQ ( 0,15,  5,15,     MS, "AMD mobile Sempron (Keene)");
+   FMQ ( 0,15,  5,15,     dS, "AMD Sempron (Manila)");
+   FMQ ( 0,15,  5,15,     dA, "AMD Athlon 64 (Orleans)");
+   FM  ( 0,15,  5,15,         "AMD Athlon 64 (unknown type) (Orleans/Manila/Keene)");
+   FM  ( 0,15,  5,15,         "AMD Athlon 64 (Orleans)");
+   FMS ( 0,15,  6, 8,  1,     "AMD Turion 64 X2 (Tyler BH-G1)");
+   FMSQ( 0,15,  6, 8,  2, MT, "AMD Turion 64 X2 (Tyler BH-G2)");
+   FMSQ( 0,15,  6, 8,  2, dS, "AMD Sempron Dual-Core (Tyler BH-G2)");
+   FMS ( 0,15,  6, 8,  2,     "AMD Turion 64 (unknown type) (Tyler BH-G2)");
+   FMQ ( 0,15,  6, 8,     MT, "AMD Turion 64 X2 (Tyler)");
+   FMQ ( 0,15,  6, 8,     dS, "AMD Sempron Dual-Core (Tyler)");
+   FM  ( 0,15,  6, 8,         "AMD Turion 64 (unknown type) (Tyler)");
+   FMSQ( 0,15,  6,11,  1, dS, "AMD Sempron Dual-Core (Sparta BH-G1)");
+   FMSQ( 0,15,  6,11,  1, dA, "AMD Athlon 64 X2 Dual-Core (Brisbane BH-G1)");
+   FMS ( 0,15,  6,11,  1,     "AMD Athlon 64 (unknown type) (Brisbane/Sparta BH-G1)");
+   FMSQ( 0,15,  6,11,  2, dA, "AMD Athlon 64 X2 Dual-Core (Brisbane BH-G2)");
+   FMSQ( 0,15,  6,11,  2, Mn, "AMD Turion Neo X2 Dual-Core (Huron BH-G2)");
+   FMSQ( 0,15,  6,11,  2, MN, "AMD Athlon Neo X2 (Huron BH-G2)");
+   FMS ( 0,15,  6,11,  2,     "AMD Athlon 64 (unknown type) (Brisbane/Huron BH-G2)");
+   FMQ ( 0,15,  6,11,     dS, "AMD Sempron Dual-Core (Sparta)");
+   FMQ ( 0,15,  6,11,     Mn, "AMD Turion Neo X2 Dual-Core (Huron)");
+   FMQ ( 0,15,  6,11,     MN, "AMD Athlon Neo X2 (Huron)");
+   FMQ ( 0,15,  6,11,     dA, "AMD Athlon 64 X2 Dual-Core (Brisbane)");
+   FM  ( 0,15,  6,11,         "AMD Athlon 64 (unknown type) (Brisbane/Sparta/Huron)");
+   FMSQ( 0,15,  6,12,  2, MS, "AMD mobile Sempron (Sherman DH-G2)");
+   FMSQ( 0,15,  6,12,  2, dS, "AMD Sempron (Sparta DH-G2)");
+   FMSQ( 0,15,  6,12,  2, dA, "AMD Athlon 64 (Lima DH-G2)");
+   FMS ( 0,15,  6,12,  2,     "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman DH-G2)");
+   FMQ ( 0,15,  6,12,     MS, "AMD mobile Sempron (Sherman)");
+   FMQ ( 0,15,  6,12,     dS, "AMD Sempron (Sparta)");
+   FMQ ( 0,15,  6,12,     dA, "AMD Athlon 64 (Lima)");
+   FM  ( 0,15,  6,12,         "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman)");
+   FMSQ( 0,15,  6,15,  2, MS, "AMD mobile Sempron (Sherman DH-G2)");
+   FMSQ( 0,15,  6,15,  2, dS, "AMD Sempron (Sparta DH-G2)");
+   FMSQ( 0,15,  6,15,  2, MN, "AMD Athlon Neo (Huron DH-G2)");
+   FMS ( 0,15,  6,15,  2,     "AMD Athlon Neo (unknown type) (Huron/Sparta/Sherman DH-G2)");
+   FMQ ( 0,15,  6,15,     MS, "AMD mobile Sempron (Sherman)");
+   FMQ ( 0,15,  6,15,     dS, "AMD Sempron (Sparta)");
+   FMQ ( 0,15,  6,15,     MN, "AMD Athlon Neo (Huron)");
+   FM  ( 0,15,  6,15,         "AMD Athlon Neo (unknown type) (Huron/Sparta/Sherman)");
+   FMSQ( 0,15,  7,12,  2, MS, "AMD mobile Sempron (Sherman DH-G2)");
+   FMSQ( 0,15,  7,12,  2, dS, "AMD Sempron (Sparta DH-G2)");
+   FMSQ( 0,15,  7,12,  2, dA, "AMD Athlon (Lima DH-G2)");
+   FMS ( 0,15,  7,12,  2,     "AMD Athlon (unknown type) (Lima/Sparta/Sherman DH-G2)");
+   FMQ ( 0,15,  7,12,     MS, "AMD mobile Sempron (Sherman)");
+   FMQ ( 0,15,  7,12,     dS, "AMD Sempron (Sparta)");
+   FMQ ( 0,15,  7,12,     dA, "AMD Athlon (Lima)");
+   FM  ( 0,15,  7,12,         "AMD Athlon (unknown type) (Lima/Sparta/Sherman)");
+   FMSQ( 0,15,  7,15,  1, MS, "AMD mobile Sempron (Sherman DH-G1)");
+   FMSQ( 0,15,  7,15,  1, dS, "AMD Sempron (Sparta DH-G1)");
+   FMSQ( 0,15,  7,15,  1, dA, "AMD Athlon 64 (Lima DH-G1)");
+   FMS ( 0,15,  7,15,  1,     "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman DH-G1)");
+   FMSQ( 0,15,  7,15,  2, MS, "AMD mobile Sempron (Sherman DH-G2)");
+   FMSQ( 0,15,  7,15,  2, dS, "AMD Sempron (Sparta DH-G2)");
+   FMSQ( 0,15,  7,15,  2, MN, "AMD Athlon Neo (Huron DH-G2)");
+   FMSQ( 0,15,  7,15,  2, dA, "AMD Athlon 64 (Lima DH-G2)");
+   FMS ( 0,15,  7,15,  2,     "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman/Huron DH-G2)");
+   FMQ ( 0,15,  7,15,     MS, "AMD mobile Sempron (Sherman)");
+   FMQ ( 0,15,  7,15,     dS, "AMD Sempron (Sparta)");
+   FMQ ( 0,15,  7,15,     MN, "AMD Athlon Neo (Huron)");
+   FMQ ( 0,15,  7,15,     dA, "AMD Athlon 64 (Lima)");
+   FM  ( 0,15,  7,15,         "AMD Athlon 64 (unknown type) (Lima/Sparta/Sherman/Huron)");
+   FMS ( 0,15, 12, 1,  3,     "AMD Athlon 64 FX Dual-Core (Windsor JH-F3)");
+   FM  ( 0,15, 12, 1,         "AMD Athlon 64 FX Dual-Core (Windsor)");
+   F   ( 0,15,                "AMD (unknown model)");
+   FMS ( 1,15,  0, 0,  0,     "AMD (unknown type) (Barcelona DR-A0)"); // sandpile.org
+   FMS ( 1,15,  0, 0,  1,     "AMD (unknown type) (Barcelona DR-A1)"); // sandpile.org
+   FMS ( 1,15,  0, 0,  2,     "AMD (unknown type) (Barcelona DR-A2)"); // sandpile.org
+   FMS ( 1,15,  0, 2,  0,     "AMD (unknown type) (Barcelona DR-B0)"); // sandpile.org
+   FMSQ( 1,15,  0, 2,  1, sO, "AMD Quad-Core Opteron (Barcelona DR-B1)");
+   FMS ( 1,15,  0, 2,  1,     "AMD (unknown type) (Barcelona DR-B1)");
+   FMSQ( 1,15,  0, 2,  2, EO, "AMD Embedded Opteron (Barcelona DR-B2)");
+   FMSQ( 1,15,  0, 2,  2, sO, "AMD Quad-Core Opteron (Barcelona DR-B2)");
+   FMSQ( 1,15,  0, 2,  2, Tp, "AMD Phenom Triple-Core (Toliman DR-B2)");
+   FMSQ( 1,15,  0, 2,  2, Qp, "AMD Phenom Quad-Core (Agena DR-B2)");
+   FMS ( 1,15,  0, 2,  2,     "AMD (unknown type) (Barcelona/Toliman/Agena DR-B2)");
+   FMSQ( 1,15,  0, 2,  3, EO, "AMD Embedded Opteron (Barcelona DR-B3)");
+   FMSQ( 1,15,  0, 2,  3, sO, "AMD Quad-Core Opteron (Barcelona DR-B3)");
+   FMSQ( 1,15,  0, 2,  3, Tp, "AMD Phenom Triple-Core (Toliman DR-B3)");
+   FMSQ( 1,15,  0, 2,  3, Qp, "AMD Phenom Quad-Core (Agena DR-B3)");
+   FMSQ( 1,15,  0, 2,  3, dA, "AMD Athlon Dual-Core (Kuma DR-B3)");
+   FMS ( 1,15,  0, 2,  3,     "AMD (unknown type) (Barcelona/Toliman/Agena/Kuma DR-B3)");
+   FMS ( 1,15,  0, 2, 10,     "AMD Quad-Core Opteron (Barcelona DR-BA)");
+   FMQ ( 1,15,  0, 2,     EO, "AMD Embedded Opteron (Barcelona)");
+   FMQ ( 1,15,  0, 2,     sO, "AMD Quad-Core Opteron (Barcelona)");
+   FMQ ( 1,15,  0, 2,     Tp, "AMD Phenom Triple-Core (Toliman)");
+   FMQ ( 1,15,  0, 2,     Qp, "AMD Phenom Quad-Core (Agena)");
+   FMQ ( 1,15,  0, 2,     dA, "AMD Athlon Dual-Core (Kuma)");
+   FM  ( 1,15,  0, 2,         "AMD (unknown type) (Barcelona/Toliman/Agena/Kuma)");
+   FMS ( 1,15,  0, 4,  0,     "AMD Athlon (unknown type) (Regor/Propus/Shanghai/Callisto/Heka/Deneb RB-C0)"); // sandpile.org
+   FMS ( 1,15,  0, 4,  1,     "AMD Athlon (unknown type) (Regor/Propus/Shanghai/Callisto/Heka/Deneb RB-C1)"); // sandpile.org
+   FMSQ( 1,15,  0, 4,  2, EO, "AMD Embedded Opteron (Shanghai RB-C2)");
+   FMSQ( 1,15,  0, 4,  2, sO, "AMD Quad-Core Opteron (Shanghai RB-C2)");
+   FMSQ( 1,15,  0, 4,  2, dr, "AMD Athlon Dual-Core (Propus RB-C2)");
+   FMSQ( 1,15,  0, 4,  2, dA, "AMD Athlon Dual-Core (Regor RB-C2)");
+   FMSQ( 1,15,  0, 4,  2, Dp, "AMD Phenom II X2 (Callisto RB-C2)");
+   FMSQ( 1,15,  0, 4,  2, Tp, "AMD Phenom II X3 (Heka RB-C2)");
+   FMSQ( 1,15,  0, 4,  2, Qp, "AMD Phenom II X4 (Deneb RB-C2)");
+   FMS ( 1,15,  0, 4,  2,     "AMD Athlon (unknown type) (Regor/Propus/Shanghai/Callisto/Heka/Deneb RB-C2)");
+   FMSQ( 1,15,  0, 4,  3, Dp, "AMD Phenom II X2 (Callisto RB-C3)");
+   FMSQ( 1,15,  0, 4,  3, Tp, "AMD Phenom II X3 (Heka RB-C3)");
+   FMSQ( 1,15,  0, 4,  3, Qp, "AMD Phenom II X4 (Deneb RB-C3)");
+   FMS ( 1,15,  0, 4,  3,     "AMD Phenom II (unknown type) (Callisto/Heka/Deneb RB-C3)");
+   FMQ ( 1,15,  0, 4,     EO, "AMD Embedded Opteron (Shanghai)");
+   FMQ ( 1,15,  0, 4,     sO, "AMD Quad-Core Opteron (Shanghai)");
+   FMQ ( 1,15,  0, 4,     dr, "AMD Athlon Dual-Core (Propus)");
+   FMQ ( 1,15,  0, 4,     dA, "AMD Athlon Dual-Core (Regor)");
+   FMQ ( 1,15,  0, 4,     Dp, "AMD Phenom II X2 (Callisto)");
+   FMQ ( 1,15,  0, 4,     Tp, "AMD Phenom II X3 (Heka)");
+   FMQ ( 1,15,  0, 4,     Qp, "AMD Phenom II X4 (Deneb)");
+   FM  ( 1,15,  0, 4,         "AMD Athlon (unknown type) (Regor/Propus/Shanghai/Callisto/Heka/Deneb)");
+   FMS ( 1,15,  0, 5,  0,     "AMD Athlon (unknown type) (Regor/Rana/Propus BL-C0)"); // sandpile.org
+   FMS ( 1,15,  0, 5,  1,     "AMD Athlon (unknown type) (Regor/Rana/Propus BL-C1)"); // sandpile.org
+   FMSQ( 1,15,  0, 5,  2, DA, "AMD Athlon II X2 (Regor BL-C2)");
+   FMSQ( 1,15,  0, 5,  2, TA, "AMD Athlon II X3 (Rana BL-C2)");
+   FMSQ( 1,15,  0, 5,  2, QA, "AMD Athlon II X4 (Propus BL-C2)");
+   FMS ( 1,15,  0, 5,  2,     "AMD Athlon (unknown type) (Regor/Rana/Propus BL-C2)");
+   FMSQ( 1,15,  0, 5,  3, TA, "AMD Athlon II X3 (Rana BL-C3)");
+   FMSQ( 1,15,  0, 5,  3, QA, "AMD Athlon II X4 (Propus BL-C3)");
+   FMSQ( 1,15,  0, 5,  3, Tp, "AMD Phenom II Triple-Core (Heka BL-C3)");
+   FMSQ( 1,15,  0, 5,  3, Qp, "AMD Phenom II Quad-Core (Deneb BL-C3)");
+   FMS ( 1,15,  0, 5,  3,     "AMD Athlon (unknown type) (Regor/Rana/Propus/Callisto/Heka/Deneb BL-C3)");
+   FMQ ( 1,15,  0, 5,     DA, "AMD Athlon II X2 (Regor)");
+   FMQ ( 1,15,  0, 5,     TA, "AMD Athlon II X3 (Rana)");
+   FMQ ( 1,15,  0, 5,     QA, "AMD Athlon II X4 (Propus)");
+   FMQ ( 1,15,  0, 5,     Tp, "AMD Phenom II Triple-Core (Heka)");
+   FMQ ( 1,15,  0, 5,     Qp, "AMD Phenom II Quad-Core (Deneb)");
+   FM  ( 1,15,  0, 5,         "AMD Athlon (unknown type) (Regor/Rana/Propus/Callisto/Heka/Deneb)");
+   FMS ( 1,15,  0, 6,  0,     "AMD Athlon (unknown type) (Regor/Sargas/Caspain DA-C0)");
+   FMS ( 1,15,  0, 6,  1,     "AMD Athlon (unknown type) (Regor/Sargas/Caspain DA-C1)");
+   FMSQ( 1,15,  0, 6,  2, MS, "AMD Sempron Mobile (Sargas DA-C2)");
+   FMSQ( 1,15,  0, 6,  2, dS, "AMD Sempron II (Sargas DA-C2)");
+   FMSQ( 1,15,  0, 6,  2, MT, "AMD Turion II Dual-Core Mobile (Caspian DA-C2)");
+   FMSQ( 1,15,  0, 6,  2, MA, "AMD Athlon II Dual-Core Mobile (Regor DA-C2)");
+   FMSQ( 1,15,  0, 6,  2, DA, "AMD Athlon II X2 (Regor DA-C2)");
+   FMSQ( 1,15,  0, 6,  2, dA, "AMD Athlon II (Sargas DA-C2)");
+   FMS ( 1,15,  0, 6,  2,     "AMD Athlon (unknown type) (Regor/Sargas/Caspain DA-C2)");
+   FMSQ( 1,15,  0, 6,  3, Ms, "AMD V-Series Mobile (Champlain DA-C3)");
+   FMSQ( 1,15,  0, 6,  3, DS, "AMD Sempron II X2 (Regor DA-C3)");
+   FMSQ( 1,15,  0, 6,  3, dS, "AMD Sempron II (Sargas DA-C3)");
+   FMSQ( 1,15,  0, 6,  3, MT, "AMD Turion II Dual-Core Mobile (Champlain DA-C3)");
+   FMSQ( 1,15,  0, 6,  3, Mp, "AMD Phenom II Dual-Core Mobile (Champlain DA-C3)");
+   FMSQ( 1,15,  0, 6,  3, MA, "AMD Athlon II Dual-Core Mobile (Champlain DA-C3)");
+   FMSQ( 1,15,  0, 6,  3, DA, "AMD Athlon II X2 (Regor DA-C3)");
+   FMSQ( 1,15,  0, 6,  3, dA, "AMD Athlon II (Sargas DA-C3)");
+   FMS ( 1,15,  0, 6,  3,     "AMD Athlon (unknown type) (Regor/Sargas/Champlain DA-C3)");
+   FMQ ( 1,15,  0, 6,     Ms, "AMD V-Series Mobile (Champlain)");
+   FMQ ( 1,15,  0, 6,     MS, "AMD Sempron Mobile (Sargas)");
+   FMQ ( 1,15,  0, 6,     DS, "AMD Sempron II X2 (Regor)");
+   FMQ ( 1,15,  0, 6,     dS, "AMD Sempron II (Sargas)");
+   FMQ ( 1,15,  0, 6,     MT, "AMD Turion II Dual-Core Mobile (Caspian / Champlain)");
+   FMQ ( 1,15,  0, 6,     Mp, "AMD Phenom II Dual-Core Mobile (Champlain)");
+   FMQ ( 1,15,  0, 6,     MA, "AMD Athlon II Dual-Core Mobile (Regor / Champlain)");
+   FMQ ( 1,15,  0, 6,     DA, "AMD Athlon II X2 (Regor)");
+   FMQ ( 1,15,  0, 6,     dA, "AMD Athlon II (Sargas)");
+   FM  ( 1,15,  0, 6,         "AMD Athlon (unknown type) (Regor/Sargas/Caspian/Champlain)");
+   FMSQ( 1,15,  0, 8,  0, SO, "AMD Six-Core Opteron (Istanbul HY-D0)");
+   FMSQ( 1,15,  0, 8,  0, sO, "AMD Opteron 4100 (Lisbon HY-D0)");
+   FMS ( 1,15,  0, 8,  0,     "AMD Opteron (unknown type) (Lisbon/Istanbul HY-D0)");
+   FMS ( 1,15,  0, 8,  1,     "AMD Opteron 4100 (Lisbon HY-D1)");
+   FMQ ( 1,15,  0, 8,     SO, "AMD Six-Core Opteron (Istanbul)");
+   FMQ ( 1,15,  0, 8,     sO, "AMD Opteron 4100 (Lisbon)");
+   FM  ( 1,15,  0, 8,         "AMD Opteron (unknown type) (Lisbon/Istanbul)");
+   FMS ( 1,15,  0, 9,  0,     "AMD Opteron 6100 (Magny-Cours HY-D0)"); // sandpile.org
+   FMS ( 1,15,  0, 9,  1,     "AMD Opteron 6100 (Magny-Cours HY-D1)");
+   FM  ( 1,15,  0, 9,         "AMD Opteron 6100 (Magny-Cours)");
+   FMSQ( 1,15,  0,10,  0, Qp, "AMD Phenom II X4 (Zosma PH-E0)");
+   FMSQ( 1,15,  0,10,  0, Sp, "AMD Phenom II X6 (Thuban PH-E0)");
+   FMS ( 1,15,  0,10,  0,     "AMD Phenom II (unknown type) (Zosma/Thuban PH-E0)");
+   FMQ ( 1,15,  0,10,     Qp, "AMD Phenom II X4 (Zosma)");
+   FMQ ( 1,15,  0,10,     Sp, "AMD Phenom II X6 (Thuban)");
+   FM  ( 1,15,  0,10,         "AMD Phenom II (unknown type) (Zosma/Thuban)");
+   F   ( 1,15,                "AMD (unknown model)");
+   FMSQ( 2,15,  0, 3,  1, MU, "AMD Turion X2 Ultra Dual-Core Mobile (Griffin LG-B1)");
+   FMSQ( 2,15,  0, 3,  1, MT, "AMD Turion X2 Dual-Core Mobile (Lion LG-B1)");
+   FMSQ( 2,15,  0, 3,  1, DS, "AMD Sempron X2 Dual-Core (Sable LG-B1)");
+   FMSQ( 2,15,  0, 3,  1, dS, "AMD Sempron (Sable LG-B1)");
+   FMSQ( 2,15,  0, 3,  1, DA, "AMD Athlon X2 Dual-Core (Lion LG-B1)");
+   FMSQ( 2,15,  0, 3,  1, dA, "AMD Athlon (Lion LG-B1)");
+   FMS ( 2,15,  0, 3,  1,     "AMD Athlon (unknown type) (Lion/Sable LG-B1)");
+   FMQ ( 2,15,  0, 3,     MU, "AMD Turion X2 Ultra (Griffin)");
+   FMQ ( 2,15,  0, 3,     MT, "AMD Turion X2 (Lion)");
+   FMQ ( 2,15,  0, 3,     DS, "AMD Sempron X2 Dual-Core (Sable)");
+   FMQ ( 2,15,  0, 3,     dS, "AMD Sempron (Sable)");
+   FMQ ( 2,15,  0, 3,     DA, "AMD Athlon X2 Dual-Core (Lion)");
+   FMQ ( 2,15,  0, 3,     dA, "AMD Athlon (Lion)");
+   FM  ( 2,15,  0, 3,         "AMD Athlon (unknown type) (Lion/Sable)");
+   F   ( 2,15,                "AMD (unknown model)");
+   FMS ( 3,15,  0, 0,  0,     "AMD Athlon (unknown type) (Llano LN-A0)"); // sandpile.org
+   FMS ( 3,15,  0, 0,  1,     "AMD Athlon (unknown type) (Llano LN-A1)"); // sandpile.org
+   FMSQ( 3,15,  0, 1,  0, dS, "AMD Sempron Dual-Core (Llano LN-B0)");
+   FMSQ( 3,15,  0, 1,  0, dA, "AMD Athlon II Dual-Core (Llano LN-B0)");
+   FMSQ( 3,15,  0, 1,  0, Sa, "AMD A-Series (Llano LN-B0)");
+   FMSQ( 3,15,  0, 1,  0, Se, "AMD E2-Series (Llano LN-B0)");
+   FMS ( 3,15,  0, 1,  0,     "AMD Athlon (unknown type) (Llano LN-B0)");
+   FMQ ( 3,15,  0, 1,     dS, "AMD Sempron Dual-Core (Llano)");
+   FMQ ( 3,15,  0, 1,     dA, "AMD Athlon II Dual-Core (Llano)");
+   FMQ ( 3,15,  0, 1,     Sa, "AMD A-Series (Llano)");
+   FMQ ( 3,15,  0, 1,     Se, "AMD E2-Series (Llano)");
+   FM  ( 3,15,  0, 1,         "AMD Athlon (unknown type) (Llano)");
+   FMS ( 3,15,  0, 2,  0,     "AMD Athlon (unknown type) (Llano LN-B0)"); // sandpile.org
+   F   ( 3,15,                "AMD (unknown model) (Llano)");
+   FMSQ( 5,15,  0, 1,  0, Sc, "AMD C-Series (Ontario ON-B0)");
+   FMSQ( 5,15,  0, 1,  0, Se, "AMD E-Series (Zacate ON-B0)");
+   FMSQ( 5,15,  0, 1,  0, Sg, "AMD G-Series (Ontario/Zacate ON-B0)");
+   FMSQ( 5,15,  0, 1,  0, Sz, "AMD Z-Series (Desna ON-B0)");
+   FMS ( 5,15,  0, 1,  0,     "AMD (unknown type) (Ontario/Zacate/Desna ON-B0)");
+   FM  ( 5,15,  0, 1,         "AMD (unknown type) (Ontario/Zacate/Desna)");
+   FMSQ( 5,15,  0, 2,  0, Sc, "AMD C-Series (Ontario ON-C0)");
+   FMSQ( 5,15,  0, 2,  0, Se, "AMD E-Series (Zacate ON-C0)");
+   FMSQ( 5,15,  0, 2,  0, Sg, "AMD G-Series (Ontario/Zacate ON-C0)");
+   FMSQ( 5,15,  0, 2,  0, Sz, "AMD Z-Series (Desna ON-C0)");
+   FMS ( 5,15,  0, 2,  0,     "AMD (unknown type) (Ontario/Zacate/Desna ON-C0)");
+   FM  ( 5,15,  0, 2,         "AMD (unknown type) (Ontario/Zacate/Desna)");
+   F   ( 5,15,                "AMD (unknown model)");
+   FMS ( 6,15,  0, 0,  0,     "AMD (unknown type) (Interlagos/Valencia/Zurich/Zambezi OR-A0)"); // sandpile.org
+   FMS ( 6,15,  0, 0,  1,     "AMD (unknown type) (Interlagos/Valencia/Zurich/Zambezi OR-A1)"); // sandpile.org
+   FMS ( 6,15,  0, 1,  0,     "AMD (unknown type) (Interlagos/Valencia/Zurich/Zambezi OR-B0)"); // sandpile.org
+   FMS ( 6,15,  0, 1,  1,     "AMD (unknown type) (Interlagos/Valencia/Zurich/Zambezi OR-B1)"); // sandpile.org
+   FMSQ( 6,15,  0, 1,  2, sO, "AMD Opteron 6200 (Interlagos OR-B2) / Opteron 4200 (Valencia OR-B2) / Opteron 3200 (Zurich OR-B2)");
+   FMSQ( 6,15,  0, 1,  2, df, "AMD FX-Series (Zambezi OR-B2)");
+   FMS ( 6,15,  0, 1,  2,     "AMD (unknown type) (Interlagos/Valencia/Zurich/Zambezi OR-B2)");
+   FMQ ( 6,15,  0, 1,     sO, "AMD Opteron 6200 (Interlagos) / Opteron 4200 (Valencia) / Opteron 3200 (Zurich)");
+   FMQ ( 6,15,  0, 1,     df, "AMD FX-Series (Zambezi)");
+   FM  ( 6,15,  0, 1,         "AMD (unknown type) (Interlagos/Valencia/Zurich/Zambezi)");
+   FMSQ( 6,15,  0, 2,  0, sO, "AMD Opteron 6300 (Abu Dhabi OR-C0) / Opteron 4300 (Seoul OR-C0) / Opteron 3300 (Delhi OR-C0)");
+   FMSQ( 6,15,  0, 2,  0, df, "AMD FX-Series (Vishera OR-C0)");
+   FMS ( 6,15,  0, 2,  0,     "AMD (unknown type) (Abu Dhabi/Seoul/Delhi/Vishera OR-C0)");
+   FMQ ( 6,15,  0, 2,     sO, "AMD Opteron 6300 (Abu Dhabi) / Opteron 4300 (Seoul) / Opteron 3300 (Delhi)");
+   FMQ ( 6,15,  0, 2,     df, "AMD FX-Series (Vishera)");
+   FM  ( 6,15,  0, 2,         "AMD (unknown type) (Abu Dhabi/Seoul/Delhi/Vishera)");
+   FMSQ( 6,15,  1, 0,  1, Sa, "AMD A-Series (Trinity TN-A1)");
+   FMSQ( 6,15,  1, 0,  1, Sr, "AMD R-Series (Trinity TN-A1)");
+   FMSQ( 6,15,  1, 0,  1, dA, "AMD Athlon Dual-Core / Athlon Quad-Core (Trinity TN-A1)");
+   FMSQ( 6,15,  1, 0,  1, dS, "AMD Sempron Dual-Core (Trinity TN-A1)");
+   FMSQ( 6,15,  1, 0,  1, dI, "AMD FirePro (Trinity TN-A1)");
+   FMS ( 6,15,  1, 0,  1,     "AMD (unknown type) (Trinity TN-A1)");
+   FMQ ( 6,15,  1, 0,     Sa, "AMD A-Series (Trinity)");
+   FMQ ( 6,15,  1, 0,     Sr, "AMD R-Series (Trinity)");
+   FMQ ( 6,15,  1, 0,     dA, "AMD Athlon Dual-Core / Athlon Quad-Core (Trinity)");
+   FMQ ( 6,15,  1, 0,     dS, "AMD Sempron Dual-Core (Trinity)");
+   FMQ ( 6,15,  1, 0,     dI, "AMD FirePro (Trinity)");
+   FM  ( 6,15,  1, 0,         "AMD (unknown type) (Trinity TN-A1)");
+   FMSQ( 6,15,  1, 3,  1, Sa, "AMD A-Series (Richland RL-A1)");
+   FMSQ( 6,15,  1, 3,  1, Sr, "AMD R-Series (Richland RL-A1)");
+   FMSQ( 6,15,  1, 3,  1, dA, "AMD Athlon Dual-Core / Athlon Quad-Core (Richland RL-A1)");
+   FMSQ( 6,15,  1, 3,  1, dS, "AMD Sempron Dual-Core (Richland RL-A1)");
+   FMSQ( 6,15,  1, 3,  1, dI, "AMD FirePro (Richland RL-A1)");
+   FMS ( 6,15,  1, 3,  1,     "AMD (unknown type) (Richland RL-A1)");
+   FMQ ( 6,15,  1, 3,     Sa, "AMD A-Series (Richland)");
+   FMQ ( 6,15,  1, 3,     Sr, "AMD R-Series (Richland)");
+   FMQ ( 6,15,  1, 3,     dA, "AMD Athlon Dual-Core / Athlon Quad-Core (Richland)");
+   FMQ ( 6,15,  1, 3,     dS, "AMD Sempron Dual-Core (Richland)");
+   FMQ ( 6,15,  1, 3,     dI, "AMD FirePro (Richland)");
+   FM  ( 6,15,  1, 3,         "AMD (unknown type) (Richland)");
+   FMS ( 6,15,  3, 0,  0,     "AMD (unknown type) (Kaveri KV-A0)");
+   FMSQ( 6,15,  3, 0,  1, Sa, "AMD Elite Performance A-Series (Kaveri KV-A1)");
+   FMSQ( 6,15,  3, 0,  1, Mr, "AMD Mobile R-Series (Kaveri KV-A1)");
+   FMSQ( 6,15,  3, 0,  1, sO, "AMD Opteron X1200 / X2200 (Kaveri KV-A1)");
+   FMS ( 6,15,  3, 0,  1,     "AMD (unknown type) (Kaveri KV-A1)");
+   FMQ ( 6,15,  3, 0,     Sa, "AMD Elite Performance A-Series (Kaveri)");
+   FMQ ( 6,15,  3, 0,     Mr, "AMD Mobile R-Series (Kaveri)");
+   FMQ ( 6,15,  3, 0,     sO, "AMD Opteron X1200 / X2200 (Kaveri)");
+   FM  ( 6,15,  3, 0,         "AMD (unknown type) (Kaveri)");
+   FMSQ( 6,15,  3, 8,  1, Sa, "AMD A-Series (Godavari A1)"); // sandpile.org
+   FMS ( 6,15,  3, 8,  1,     "AMD (unknown type) (Godavari A1)"); // sandpile.org
+   FMQ ( 6,15,  3, 8,     Sa, "AMD A-Series (Godavari)");
+   FM  ( 6,15,  3, 8,         "AMD (unknown type) (Godavari)");
+   FMS ( 6,15,  6, 0,  0,     "AMD (unknown type) (Carrizo/Toronto CZ-A0)"); // sandpile.org
+   FMSQ( 6,15,  6, 0,  1, sO, "AMD Opteron (Toronto CZ-A1)"); // undocumented, but instlatx64 sample
+   FMSQ( 6,15,  6, 0,  1, df, "AMD FX-Series (Carrizo CZ-A1)"); // undocumented, but instlatx64 sample
+   FMS ( 6,15,  6, 0,  1,     "AMD (unknown type) (Carrizo/Toronto CZ-A1)"); // undocumented, but instlatx64 sample
+   FMQ ( 6,15,  6, 0,     sO, "AMD Opteron (Toronto)"); // undocumented, but instlatx64 sample
+   FMQ ( 6,15,  6, 0,     df, "AMD FX-Series (Carrizo)"); // undocumented, but instlatx64 sample
+   FM  ( 6,15,  6, 0,         "AMD (unknown type) (Carrizo/Toronto)"); // undocumented, but instlatx64 sample
+   FMSQ( 6,15,  6, 5,  1, Sa, "AMD A-Series (Carrizo/Bristol Ridge/Stoney Ridge CZ-A1/BR-A1)"); // undocumented, but samples from Alexandros Couloumbis & instlatx64; sandpile.org stepping
+   FMSQ( 6,15,  6, 5,  1, Se, "AMD E-Series (Stoney Ridge CZ-A1/BR-A1)"); // undocumented; sandpile.org stepping
+   FMSQ( 6,15,  6, 5,  1, Sg, "AMD G-Series (Brown Falcon/Prairie Falcon CZ-A1/BR-A1)"); // undocumented; sandpile.org stepping
+   FMSQ( 6,15,  6, 5,  1, Sr, "AMD R-Series (Merlin Falcon CZ-A1/BR-A1)"); // undocumented; sandpile.org stepping
+   FMS ( 6,15,  6, 5,  1,     "AMD (unknown type) (Carrizo/Bristol Ridge/Stoney Ridge/Toronto/Brown Falcon/Merlin Falcon/Prairie Falcon CZ-A1/BR-A1)"); // sandpile.org
+   FMQ ( 6,15,  6, 5,     Sa, "AMD A-Series (Carrizo/Bristol Ridge/Stoney Ridge)"); // undocumented, but samples from Alexandros Couloumbis & instlatx64
+   FMQ ( 6,15,  6, 5,     Se, "AMD E-Series (Stoney Ridge)"); // undocumented
+   FMQ ( 6,15,  6, 5,     Sg, "AMD G-Series (Brown Falcon/Prairie Falcon)"); // undocumented
+   FMQ ( 6,15,  6, 5,     Sr, "AMD R-Series (Merlin Falcon)"); // undocumented
+   FM  ( 6,15,  6, 5,         "AMD (unknown type) (Carrizo/Bristol Ridge/Stoney Ridge/Toronto/Brown Falcon/Merlin Falcon/Prairie Falcon)"); // undocumented, but sample from Alexandros Couloumbis
+   FMSQ( 6,15,  7, 0,  0, Sa, "AMD A-Series (Carrizo/Bristol Ridge/Stoney Ridge ST-A0)");
+   FMSQ( 6,15,  7, 0,  0, Se, "AMD E-Series (Stoney Ridge ST-A0)");
+   FMSQ( 6,15,  7, 0,  0, Sg, "AMD G-Series (Brown Falcon/Prairie Falcon ST-A0)");
+   FMSQ( 6,15,  7, 0,  0, Sr, "AMD R-Series (Merlin Falcon ST-A0)");
+   FMS ( 6,15,  7, 0,  0,     "AMD (unknown type) (Carrizo/Bristol Ridge/Stoney Ridge/Toronto/Brown Falcon/Merlin Falcon/Prairie Falcon ST-A0)");
+   FMQ ( 6,15,  7, 0,     Sa, "AMD A-Series (Carrizo/Bristol Ridge/Stoney Ridge)");
+   FMQ ( 6,15,  7, 0,     Se, "AMD E-Series (Stoney Ridge)");
+   FMQ ( 6,15,  7, 0,     Sg, "AMD G-Series (Brown Falcon/Prairie Falcon)");
+   FMQ ( 6,15,  7, 0,     Sr, "AMD R-Series (Merlin Falcon)");
+   FM  ( 6,15,  7, 0,         "AMD (unknown type) (Carrizo/Bristol Ridge/Stoney Ridge/Toronto/Brown Falcon/Merlin Falcon/Prairie Falcon)");
+   F   ( 6,15,                "AMD (unknown model)");
+   FMS ( 7,15,  0, 0,  0,     "AMD (unknown type) (Kabini/Temash/Kyoto KB-A0)"); // sandpile.org
+   FMSQ( 7,15,  0, 0,  1, dA, "AMD Athlon (Kabini KB-A1)");
+   FMSQ( 7,15,  0, 0,  1, Sa, "AMD A-Series (Kabini/Temash KB-A1)");
+   FMSQ( 7,15,  0, 0,  1, Se, "AMD E-Series (Kabini KB-A1)");
+   FMSQ( 7,15,  0, 0,  1, Sg, "AMD G-Series (Kabini KB-A1)");
+   FMSQ( 7,15,  0, 0,  1, sO, "AMD Opteron X1100/X2100 Series (Kyoto KB-A1)");
+   FMS ( 7,15,  0, 0,  1,     "AMD (unknown type) (Kabini/Temash/Kyoto KB-A1)");
+   FMQ ( 7,15,  0, 0,     dA, "AMD Athlon (Kabini)");
+   FMQ ( 7,15,  0, 0,     Sa, "AMD A-Series (Kabini/Temash)");
+   FMQ ( 7,15,  0, 0,     Se, "AMD E-Series (Kabini)");
+   FMQ ( 7,15,  0, 0,     Sg, "AMD G-Series (Kabini)");
+   FMQ ( 7,15,  0, 0,     sO, "AMD Opteron X1100/X2100 Series (Kyoto)");
+   FM  ( 7,15,  0, 0,         "AMD (unknown type) (Kabini/Temash/Kyoto)");
+   // sandpile.org mentions (7,15),(0,4) Jaguar-esque "BV" cores
+   // (with stepping 1 = A1), but I have no idea of any such code name.
    // The AMD docs (53072) omit the CPUID entirely.  But if this sticks to the
    // recent AMD pattern, these must be (7,15),(3,0).
-   FMSQ(7,15,  3, 0,  1, Sa, "AMD A-Series (Beema ML-A1)");
-   FMSQ(7,15,  3, 0,  1, Se, "AMD E-Series (Beema ML-A1)");
-   FMSQ(7,15,  3, 0,  1, Ta, "AMD A-Series Micro (Mullins ML-A1)");
-   FMSQ(7,15,  3, 0,  1, Te, "AMD E-Series Micro (Mullins ML-A1)");
-   FMS (7,15,  3, 0,  1,     "AMD (unknown type) (Beema/Mullins ML-A1)");
-   FMQ (7,15,  3, 0,     Sa, "AMD A-Series (Beema)");
-   FMQ (7,15,  3, 0,     Se, "AMD E-Series (Beema)");
-   FMQ (7,15,  3, 0,     Ta, "AMD A-Series Micro (Mullins)");
-   FMQ (7,15,  3, 0,     Te, "AMD E-Series Micro (Mullins)");
-   FM  (7,15,  3, 0,         "AMD (unknown type) (Beema/Mullins)");
-   F   (7,15,                "AMD (unknown model)");
-   FMSQ(8,15,  0, 1,  0, dR, "AMD Ryzen (Summit Ridge ZP-B0)");
-   FMSQ(8,15,  0, 1,  0, sE, "AMD EPYC (Naples B0)");
-   FMS (8,15,  0, 1,  0,     "AMD (unknown type) (Summit Ridge/Naples ZP-B0)");
-   FMSQ(8,15,  0, 1,  1, sE, "AMD EPYC (Naples B1)");
-   FMSQ(8,15,  0, 1,  1, dR, "AMD Ryzen (Summit Ridge ZP-B1)");
-   FMS (8,15,  0, 1,  1,     "AMD (unknown type) (Summit Ridge/Naples ZP-B1)");
-   FMSQ(8,15,  0, 1,  2, dR, "AMD Ryzen (Summit Ridge ZP-B2)");
-   FMSQ(8,15,  0, 1,  2, sE, "AMD EPYC (Naples B2)");
-   FMS (8,15,  0, 1,  2,     "AMD (unknown type) (Summit Ridge/Naples ZP-B2)");
-   FMQ (8,15,  0, 1,     dR, "AMD Ryzen (Summit Ridge)");
-   FMQ (8,15,  0, 1,     sE, "AMD EPYC (Naples)");
-   FM  (8,15,  0, 1,         "AMD (unknown type) (Summit Ridge/Naples)");
-   FM  (8,15,  1, 1,         "AMD Ryzen (Raven Ridge)"); // found only on en.wikichip.org
-   FMS (8,15,  0, 8,  2,     "AMD Ryzen (Pinnacle Ridge PiR-B2)");
-   FM  (8,15,  0, 8,         "AMD Ryzen (Pinnacle Ridge)");
-   FM  (8,15,  1, 8,         "AMD Ryzen (Picasso)"); // found only on en.wikichip.org
-   FMSQ(8,15,  3, 1,  0, dR, "AMD Ryzen (Castle Peak B0)");
-   FMQ (8,15,  3, 1,     dR, "AMD Ryzen (Castle Peak)");
-   FMSQ(8,15,  3, 1,  0, sE, "AMD EPYC (Rome B0)");
-   FMQ (8,15,  3, 1,     sE, "AMD EPYC (Rome)");
-   FMS (8,15,  3, 1,  0,     "AMD Ryzen (Castle Peak B0) / EPYC (Rome B0)");
-   FM  (8,15,  3, 1,         "AMD Ryzen (Castle Peak) / EPYC (Rome)");
-   FM  (8,15,  5, 0,         "AMD DG02SRTBP4MFA (Fenghuang 15FF)"); // internal model, only instlatx64 example
-   FMS (8,15,  7, 1,  0,     "AMD Ryzen (Matisse B0)"); // undocumented, but samples from Steven Noonan
-   FM  (8,15,  7, 1,         "AMD Ryzen (Matisse)"); // undocumented, but samples from Steven Noonan
+   FMSQ( 7,15,  3, 0,  1, Sa, "AMD A-Series (Beema ML-A1)");
+   FMSQ( 7,15,  3, 0,  1, Se, "AMD E-Series (Beema ML-A1)");
+   FMSQ( 7,15,  3, 0,  1, Ta, "AMD A-Series Micro (Mullins ML-A1)");
+   FMSQ( 7,15,  3, 0,  1, Te, "AMD E-Series Micro (Mullins ML-A1)");
+   FMS ( 7,15,  3, 0,  1,     "AMD (unknown type) (Beema/Mullins ML-A1)");
+   FMQ ( 7,15,  3, 0,     Sa, "AMD A-Series (Beema)");
+   FMQ ( 7,15,  3, 0,     Se, "AMD E-Series (Beema)");
+   FMQ ( 7,15,  3, 0,     Ta, "AMD A-Series Micro (Mullins)");
+   FMQ ( 7,15,  3, 0,     Te, "AMD E-Series Micro (Mullins)");
+   FM  ( 7,15,  3, 0,         "AMD (unknown type) (Beema/Mullins)");
+   // sandpile.org mentions (7,15),(6,0) Puma-esque "NL" cores
+   // (with stepping 1 = A1), but I have no idea of any such code name.
+   F   ( 7,15,                "AMD (unknown model)");
+   FMS ( 8,15,  0, 0,  1,     "AMD (unknown type) (Summit Ridge/Naples ZP-A1)"); // sandpile.org
+   FMSQ( 8,15,  0, 1,  0, EE, "AMD EPYC (Snowy Owl ZP-B0)");
+   FMSQ( 8,15,  0, 1,  0, sE, "AMD EPYC (Naples ZP-B0)");
+   FMSQ( 8,15,  0, 1,  0, dR, "AMD Ryzen (Summit Ridge ZP-B0)");
+   FMS ( 8,15,  0, 1,  0,     "AMD (unknown type) (Summit Ridge/Naples ZP-B0)");
+   FMSQ( 8,15,  0, 1,  1, EE, "AMD EPYC (Snowy Owl ZP-B1)");
+   FMSQ( 8,15,  0, 1,  1, sE, "AMD EPYC (Naples ZP-B1)");
+   FMSQ( 8,15,  0, 1,  1, dR, "AMD Ryzen (Summit Ridge ZP-B1)");
+   FMS ( 8,15,  0, 1,  1,     "AMD (unknown type) (Summit Ridge/Naples ZP-B1)");
+   FMSQ( 8,15,  0, 1,  2, EE, "AMD EPYC (Snowy Owl ZP-B2)");
+   FMSQ( 8,15,  0, 1,  2, sE, "AMD EPYC (Naples ZP-B2)");
+   FMSQ( 8,15,  0, 1,  2, dR, "AMD Ryzen (Summit Ridge ZP-B2)");
+   FMS ( 8,15,  0, 1,  2,     "AMD (unknown type) (Summit Ridge/Naples ZP-B2)");
+   FMQ ( 8,15,  0, 1,     EE, "AMD EPYC (Snowy Owl)");
+   FMQ ( 8,15,  0, 1,     sE, "AMD EPYC (Naples)");
+   FMQ ( 8,15,  0, 1,     dR, "AMD Ryzen (Summit Ridge)");
+   FM  ( 8,15,  0, 1,         "AMD (unknown type) (Summit Ridge/Naples)");
+   FMS ( 8,15,  0, 8,  2,     "AMD Ryzen (Pinnacle Ridge PiR-B2)");
+   FM  ( 8,15,  0, 8,         "AMD Ryzen (Pinnacle Ridge)");
+   FMS ( 8,15,  1, 0,  1,     "AMD Ryzen (unknown type) (Raven Ridge/Snowy Owl/Great Horned Owl/Banded Kestrel RV-A1)"); // found only on en.wikichip.org & instlatx64 examples; sandpile.org
+   FMSQ( 8,15,  1, 1,  0, ER, "AMD Ryzen Embedded (Great Horned Owl/Banded Kestrel RV-B0)"); // only instlatx64 example; stepping from usual pattern
+   FMSQ( 8,15,  1, 1,  0, AR, "AMD Ryzen (Raven Ridge RV-B0)"); // found only on en.wikichip.org & instlatx64 examples; stepping from usual pattern
+   FMS ( 8,15,  1, 1,  0,     "AMD Ryzen (unknown type) (Raven Ridge/Snowy Owl/Great Horned Owl/Banded Kestrel RV-B0)"); // found only on en.wikichip.org & instlatx64 examples; stepping from usual pattern
+   FMQ ( 8,15,  1, 1,     ER, "AMD Ryzen Embedded (Great Horned Owl/Banded Kestrel)"); // only instlatx64 example
+   FMQ ( 8,15,  1, 1,     AR, "AMD Ryzen (Raven Ridge)"); // found only on en.wikichip.org & instlatx64 examples
+   FM  ( 8,15,  1, 1,         "AMD Ryzen (unknown type) (Raven Ridge/Snowy Owl/Great Horned Owl/Banded Kestrel)"); // found only on en.wikichip.org & instlatx64 examples
+   FM  ( 8,15,  1, 8,         "AMD Ryzen (Picasso)"); // found only on en.wikichip.org
+   FMSQ( 8,15,  3, 1,  0, dR, "AMD Ryzen (Castle Peak B0)");
+   FMQ ( 8,15,  3, 1,     dR, "AMD Ryzen (Castle Peak)");
+   FMSQ( 8,15,  3, 1,  0, sE, "AMD EPYC (Rome B0)");
+   FMQ ( 8,15,  3, 1,     sE, "AMD EPYC (Rome)");
+   FMS ( 8,15,  3, 1,  0,     "AMD Ryzen (Castle Peak B0) / EPYC (Rome B0)");
+   FM  ( 8,15,  3, 1,         "AMD Ryzen (Castle Peak) / EPYC (Rome)");
+   FM  ( 8,15,  5, 0,         "AMD DG02SRTBP4MFA (Fenghuang 15FF)"); // internal model, only instlatx64 example
+   FM  ( 8,15,  6, 0,         "AMD Ryzen (Renoir)"); // undocumented, geekbench.com example (with stepping 1)
+   FMS ( 8,15,  7, 1,  0,     "AMD Ryzen (Matisse B0)"); // undocumented, but samples from Steven Noonan
+   FM  ( 8,15,  7, 1,         "AMD Ryzen (Matisse)"); // undocumented, but samples from Steven Noonan
+   F   ( 8,15,                "AMD (unknown model)");
+   F   (10,15,                "AMD (unknown model)"); // undocumented, but samples from Steven Noonan
    DEFAULT                  ("unknown");
 
    const char*  brand_pre;
@@ -3824,53 +4252,61 @@ decode_synth_cyrix(unsigned int         val,
 }
 
 static cstring
-decode_synth_via(unsigned int  val)
+decode_synth_via(unsigned int         val,
+                 const code_stash_t*  stash)
 {
    cstring  result = NULL;
    
    START;
-   FM (0, 5,  0, 4,     "VIA WinChip (C6)");
-   FM (0, 5,  0, 8,     "VIA WinChip 2 (C6-2)");
-   FM (0, 6,  0, 6,     "VIA C3 (Samuel WinChip C5A core)");
-   FMS(0, 6,  0, 7,  0, "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000");
-   FMS(0, 6,  0, 7,  1, "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000");
-   FMS(0, 6,  0, 7,  2, "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000");
-   FMS(0, 6,  0, 7,  3, "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000");
-   FMS(0, 6,  0, 7,  4, "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000");
-   FMS(0, 6,  0, 7,  5, "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000");
-   FMS(0, 6,  0, 7,  6, "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000");
-   FMS(0, 6,  0, 7,  7, "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000");
-   FM (0, 6,  0, 7,     "VIA C3 (Ezra WinChip C5C core)");
-   FM (0, 6,  0, 8,     "VIA C3 (Ezra-T WinChip C5N core)");
-   FMS(0, 6,  0, 9,  0, "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS(0, 6,  0, 9,  1, "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS(0, 6,  0, 9,  2, "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS(0, 6,  0, 9,  3, "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS(0, 6,  0, 9,  4, "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS(0, 6,  0, 9,  5, "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS(0, 6,  0, 9,  6, "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS(0, 6,  0, 9,  7, "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FM (0, 6,  0, 9,     "VIA C3 / C3-M / Eden-N (Antaur WinChip C5P core)");
-   FM (0, 6,  0,10,     "VIA C7 / C7-M (Esther WinChip C5J core)");
-   FM (0, 6,  0,13,     "VIA C7 / C7-M / C7-D / Eden (Esther C5J core)");
+   FM  (0, 5,  0, 4,         "VIA WinChip (C6)");
+   FM  (0, 5,  0, 8,         "VIA WinChip 2 (C6-2)");
+   FM  (0, 6,  0, 6,         "VIA C3 (Samuel WinChip C5A core)");
+   FMS (0, 6,  0, 7,  0,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  1,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  2,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  3,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  4,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  5,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  6,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  7,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
+   FM  (0, 6,  0, 7,         "VIA C3 (Ezra WinChip C5C core), .13um");
+   FM  (0, 6,  0, 8,         "VIA C3 (Ezra-T WinChip C5N core)");
+   FMS (0, 6,  0, 9,  0,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
+   FMS (0, 6,  0, 9,  1,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
+   FMS (0, 6,  0, 9,  2,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
+   FMS (0, 6,  0, 9,  3,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
+   FMS (0, 6,  0, 9,  4,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
+   FMS (0, 6,  0, 9,  5,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
+   FMS (0, 6,  0, 9,  6,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
+   FMS (0, 6,  0, 9,  7,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
+   FM  (0, 6,  0, 9,         "VIA C3 / C3-M / Eden-N (Antaur WinChip C5P core)");
+   FM  (0, 6,  0,10,         "VIA C7 / C7-M (Esther WinChip C5J core)");
+   FM  (0, 6,  0,13,         "VIA C7 / C7-M / C7-D / Eden (Esther C5J core)");
    // The steppings (0-13) for Isaiah come from this post by "redray", circa
    // Apr 2013:
    //    https://forum.osdev.org/viewtopic.php?f=1&t=26351
    // It presents an excerpt from "VIA Nano Processor X2X4 BIOS Guide 2.47",
    // which apparently is only available under NDA.  The "CN" names align with
    // information on isntlatx64, and the steppings at least make sense.
-   FMS(0, 6,  0,15,  0, "VIA Nano (Isaiah CNA A0)");
-   FMS(0, 6,  0,15,  1, "VIA Nano (Isaiah CNA A1)");
-   FMS(0, 6,  0,15,  2, "VIA Nano (Isaiah CNA A2)");
-   FMS(0, 6,  0,15,  3, "VIA Nano (Isaiah CNA A3)");
-   FMS(0, 6,  0,15,  8, "VIA Nano (Isaiah CNB A1)");
-   FMS(0, 6,  0,15, 10, "VIA Nano (Isaiah CNC A2)");
-   FMS(0, 6,  0,15, 12, "VIA Nano (Isaiah CNQ A1)");
-   FMS(0, 6,  0,15, 13, "VIA Nano (Isaiah CNQ A2)");
-   FMS(0, 6,  0,15, 14, "VIA Eden (Isaiah CNR)");
-   FM (0, 6,  0,15,     "VIA Nano / Eden (Isaiah)");
-   F  (0, 6,            "VIA C3 / C3-M / C7 / C7-M / Eden / Eden ESP 7000/8000/10000 / Nano (unknown model)");
-   DEFAULT             ("unknown");
+   // 
+   // Die size depends on core, but it's unclear which cores are which:
+   //    Isaiah    = 65nm, 40nm
+   //    Isaiah II = 28nm
+   //    ZhangJiang (Zhaoxin) = 28nm ?
+   FMS (0, 6,  0,15,  0,     "VIA Nano (Isaiah CNA A0)");
+   FMS (0, 6,  0,15,  1,     "VIA Nano (Isaiah CNA A1)");
+   FMS (0, 6,  0,15,  2,     "VIA Nano (Isaiah CNA A2)");
+   FMS (0, 6,  0,15,  3,     "VIA Nano (Isaiah CNA A3)");
+   FMS (0, 6,  0,15,  8,     "VIA Nano (Isaiah CNB A1)");
+   FMS (0, 6,  0,15, 10,     "VIA Nano (Isaiah CNC A2)");
+   FMS (0, 6,  0,15, 12,     "VIA Nano (Isaiah CNQ A1)");
+   FMS (0, 6,  0,15, 13,     "VIA Nano (Isaiah CNQ A2)");
+   FMSQ(0, 6,  0,15, 14, vZ, "Zhaoxin KaiXian/Kaisheng ZX-C/ZX-C+");
+   FMS (0, 6,  0,15, 14,     "VIA Eden (Isaiah CNR)");
+   FM  (0, 6,  0,15,         "VIA Nano / Eden (Isaiah)");
+   F   (0, 6,                "VIA C3 / C3-M / C7 / C7-M / Eden / Eden ESP 7000/8000/10000 / Nano (unknown model)");
+   FM  (0, 7,  0,11,         "Zhaoxin KaiXian KX-5000 / Kaisheng KH-20000 (WuDaoKou)"); // geekbench.com example
+   DEFAULT                 ("unknown");
 
    return result;
 }
@@ -3949,8 +4385,8 @@ decode_synth_sis(unsigned int  val)
    cstring  result = NULL;
    
    START;
-   FM (0,5,  0,0,     "SiS 55x");
-   DEFAULT           ("unknown");
+   FM (0, 5,  0, 0,     "SiS 55x");
+   DEFAULT             ("unknown");
 
    return result;
 }
@@ -3961,10 +4397,11 @@ decode_synth_nsc(unsigned int  val)
    cstring  result = NULL;
    
    START;
-   FM (0,5,  0,4,     "NSC Geode GX1/GXLV/GXm");
-   FM (0,5,  0,5,     "NSC Geode GX2");
-   F  (0,5,           "NSC Geode (unknown model)");
-   DEFAULT           ("unknown");
+   FM (0, 5,  0, 4,     "NSC Geode GX1/GXLV/GXm");
+   FM (0, 5,  0, 5,     "NSC Geode GX2");
+   FM (0, 5,  0,10,     "NSC Geode LX"); // sandpile.org
+   F  (0, 5,            "NSC Geode (unknown model)");
+   DEFAULT            ("unknown");
 
    return result;
 }
@@ -3975,9 +4412,9 @@ decode_synth_vortex(unsigned int  val)
    cstring  result = NULL;
    
    START;
-   FM (0,5,  0,2,     "Vortex86DX");
-   FM (0,5,  0,8,     "Vortex86MX");
-   DEFAULT           ("unknown");
+   FM (0, 5,  0, 2,     "Vortex86DX");
+   FM (0, 5,  0, 8,     "Vortex86MX");
+   DEFAULT             ("unknown");
 
    return result;
 }
@@ -3988,8 +4425,8 @@ decode_synth_rdc(unsigned int  val)
    cstring  result = NULL;
    
    START;
-   FM (0,5,  0,8,     "RDC IAD 100");
-   DEFAULT           ("unknown");
+   FM (0, 5,  0, 8,     "RDC IAD 100");
+   DEFAULT             ("unknown");
 
    return result;
 }
@@ -4013,7 +4450,9 @@ decode_synth_zhaoxin(unsigned int  val)
    cstring  result = NULL;
    
    START;
-   FM  (0, 7,  1,11,         "Zhaoxin KaiXian/Kaisheng (WuDaoKou)");
+   FM  (0, 7,  1,11,         "Zhaoxin KaiXian KX-5000 / Kaisheng KH-20000 (WuDaoKou)");
+   FM  (0, 7,  1,15,         "Zhaoxin KaiXian ZX-D (WuDaoKou)"); // geekbench.com example (steppings 12 & 14)
+   FM  (0, 7,  3,11,         "Zhaoxin KaiXian KX-6000 / Kaisheng KH-30000 (LuJiaZui)"); // /proc/cpuinfo screenshot: KX-6840@3000MHz (stepping 0)
    DEFAULT                  ("unknown");
 
    return result;
@@ -4157,7 +4596,7 @@ decode_synth(unsigned int         val_eax,
       synth = decode_synth_cyrix(val_eax, stash);
       break;
    case VENDOR_VIA:
-      synth = decode_synth_via(val_eax);
+      synth = decode_synth_via(val_eax, stash);
       break;
    case VENDOR_TRANSMETA:
       synth = decode_synth_transmeta(val_eax, stash);
@@ -4213,9 +4652,8 @@ print_synth(const code_stash_t*  stash)
 {
    ccstring  synth = decode_synth(stash->val_1_eax, stash->vendor, stash);
    if (synth != NULL) {
-      printf("   (synth) = %s", synth);
+      printf("   (synth) = %s\n", synth);
    }
-   printf("\n");
 }
 
 #define Synth_Family(value) \
@@ -5854,6 +6292,23 @@ print_1b_n_eax(unsigned int  value)
       = { { "sub-leaf type"                           ,  0, 11, types },
         };
 
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 0);
+}
+
+static void
+print_20000001_edx(unsigned int  value)
+{
+   // I found a vague reference to this leaf in Intel Xeon Phi Coprocessor
+   // System Developers Guide, 4.2.17 CPUID: "0x20000001 for graphics function
+   // information."  But I found no document that specifies that information.
+   // sandpile.org had the following bit.
+
+   static named_item  names[]
+      = { { "k1om"                                    ,  0,  0, bools },
+        };
+
+   printf("   hypervisor features (0x40000001/eax):\n");
    print_names(value, names, LENGTH(names),
                /* max_len => */ 0);
 }
@@ -7942,6 +8397,10 @@ print_reg (unsigned int        reg,
       print_b_1f_ecx(words[WORD_ECX]);
       print_b_1f_eax(words[WORD_EAX]);
       print_b_1f_ebx(words[WORD_EBX]);
+   } else if (reg == 0x20000000) {
+      // max already set to words[WORD_EAX]
+   } else if (reg == 0x20000001) {
+      print_20000001_edx(words[WORD_EDX]);
    } else if (reg == 0x40000000) {
       // max already set to words[WORD_EAX]
       printf("   hypervisor_id = \"%-4.4s%-4.4s%-4.4s\"\n",
@@ -8725,6 +9184,21 @@ do_real(boolean  one_cpu,
                max = 0x40000000;
             }
          }
+      }
+
+      max = 0x20000000;
+      for (reg = 0x20000000; reg <= max; reg++) {
+         boolean       success;
+         unsigned int  words[WORD_NUM];
+
+         success = real_get(cpuid_fd, reg, words, 0, TRUE);
+         if (!success) break;
+
+         if (reg == 0x20000000) {
+            max = words[WORD_EAX];
+         }
+
+         print_reg(reg, words, raw, 0, &stash);
       }
 
       max = 0x80000000;

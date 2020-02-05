@@ -1,3 +1,221 @@
+Sun Feb  3 2020 Todd Allen <todd.allen@etallen.com>
+	* Made new release.
+
+Mon Feb  3 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Removed comments about (0,6),(8,14),10 contradiction.
+	  Coreboot* removed the incorrect code claiming it was Coffee Lake D0.
+	  The actual code already reflected this resolution.
+	* cpuid.c: Removed now-redundant lines from decode_uarch_intel() for
+	  the individual (0,6),(8,14) steppings.  They all say Kaby Lake now,
+	  so they aren't necessary.
+	* cpuid.c: Added (0,6),(4,14),8 Kaby Lake G0 and (0,6),(5,14),8
+	  Kaby Lake-H A0 steppings to both (synth) and (uarch synth) that I found
+	  in Coreboot*.  I realized I was worrying too much about them.  They are
+	  at least wholly distinct steppings, so they don't constitute the
+	  intra-stepping blurring that I saw with {Kaby,Amber,Whiskey,Comet}
+	  Lake.  They are more akin to the already-existing Cascade Lake &
+	  Cooper Lake steppings.  Perhaps those two new entries were just early
+	  engineering samples for Kaby Lake.
+	* cpuid.c: Added (0,6),(9,14),13 stepping to decode_uarch_intel.  The
+	  fallback without a stepping is weak, and it should be avoided for
+	  any actual known stepping.  (Added a comment too.)
+	* Makefile: Changed my own Todd's Development rules to build on very old
+	  systems, so that the executables will run at all on very old systems.
+	* Makefile: Changed -Wextra to -W.  That isn't recommended on modern
+	  gcc versions, but still works.  And it is necessary on really old
+	  gcc versions, because -Wextra produces a hard error.
+
+Sun Feb  2 2020 Todd Allen <todd.allen@etallen.com>
+	* Made new release.
+
+Sun Feb  2 2020 Todd Allen <todd.allen@etallen.com>
+	* Makefile, cpuid.proto.spec: Added FAMILY.NOTES to the list of files to
+	  be included in tarball & rpm doc directory.  That file still is messy,
+	  but I reference it a lot, so maybe it will be useful to others too.
+
+Sun Feb  2 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added old (synth) models from sandpile.org: AMD Elan SC400,
+	  NSC Geode LX.
+	* cpuid.c: Added some old (synth) and (uarch synth) die process numbers
+	  from sandpile.org.
+	* cpuid.c: Added stepping values from sandpile.org.
+	* cpuid.c: sandpile.org calls (0,6),(4,6) "Crystalwell".  Arguably, that
+	  is just the name of the L4 cache.  But even Intel's ARK calls these
+	  CPUs "Crystal Well".  So I'm changing the name to "Crystal Well".  The
+	  uarch still is Haswell, so that should clarify any confusion.
+	* cpuid.c: sandpile.org calls (0,6),(4,7) "Brystalwell".  The situation
+	  is similar, but Intel does not use that name at all.  I'm not renaming
+	  these cores.
+
+Sun Feb  2 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added leaf walking of the 0x20000000 (Intel Phi) range and
+	  decoding of a single bit in 0x20000001, based on information in
+	  sandpile.org.  I found only a vague hint about this in the Intel Xeon
+	  Phi Coprocessor System Developers Guide, but no details.
+	* cpuid.c: For the (0,11) family of Phi processors, placing them within
+	  a K1OM family.  The (0,6) Phi cores are just Airmont-derived, so left
+	  them alone.
+
+Sat Feb  1 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Reverted Cedar Trail back to Cedarview.  (Atom uArch name vs.
+	  Core name vs. Platform name vs. SoC name is very confusing.)
+
+Sat Feb  1 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added Broadwell (0,6),(3,13) steppings based on Coreboot*.
+	* cpuid.c: Added Haswell (0,6),(3,12) steppings based on Coreboot*.
+	* cpuid.c: Added Haswell-ULT (0,6),(4,5),0 stepping based on Coreboot*.
+	* cpuid.c: Added some Skylake (0,6),(4,14) steppings based on Coreboot*.
+	* cpuid.c: Added some Skylake (0,6),(5,14) steppings based on Coreboot*.
+	* cpuid.c: Added Kaby Lake-H (0,6),(9,14),9 stepping based on Coreboot*.
+	* cpuid.c: Added Cannon Lake (0,6),(6,6) steppings based on Coreboot*.
+	* cpuid.c: Added Apollo Lake (0,6),(5,12) A0 stepping based on Coreboot*.
+	* cpuid.c: Added Gemini Lake (0,6),(7,10) A0 stepping, and corrected
+	  R0 stepping, based on Coreboot*.
+	* cpuid.c: Added Ice Lake-U/Y (0,6),(7,14) A0 stepping based on
+	  Coreboot*, and disregarding inconsistent info from spec update.
+	* cpuid.c: Added Tiger Lake (0,6),(8,12) A0 stepping based on Coreboot*.
+	* cpuid.c: Added Elkhart Lake (0,6),(9,6) A0 stepping based on Coreboot*.
+	* cpuid.c: Added Comet Lake (0,6),(10,6) steppings based on Coreboot*.
+	* cpuid.c: Added Comet Lake-H/S (0,6),(10,5) steppings based on
+	  Coreboot*.
+
+Sat Feb  1 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added (uarch synth) decoding for (6,15),(0,0) Bulldozer,
+	  based on engineering sample.
+	* cpuid.c: Added (uarch synth) & (synth) (6,15),(6,0) Excavator Carrizo
+	  and Toronto, based on instlatx64 samples.
+	* cpuid.c: Added (uarch synth) decoding for (8,15),(0,0) Zen, based on
+	  engineering sample.
+	* cpuid.c: Added Zhaoxin (0,7),(1,15) based on example.
+	* cpuid.c: Differentiate Zhaoxin ZhangJiang from VIA Isaiah [C7] in
+	  (synth) and (uarch synth).  Sadly, this implies a need to use brand
+	  information for (uarch synth).
+	* cpuid.c: Addedd (synth) for VIA version of Zhaoxin ZhangJaing at
+	  (0,7),(0,11).
+	* cpuid.c: Added Westmere-EP A0 & B0 stepping (synth) based on instlatx64
+	  sample & wikipedia article.
+	* cpuid.c: Fixed bogus stepping in Centerton fallback (synth).
+	* cpuid.c: Added (0,6),(5,5),10 Cooper Lake (synth) & (uarch synth),
+	  based on Qemu.
+	* cpuid.c: Added "AMD PRO A" as a 2nd string to detect AMD A-Series.
+	* cpuid.c: Differentiate Raven Ridge from Great Horned Owl/
+	  Banded Kestrel (synth), based on "Embedded" string in brand.
+	* cpuid.c: Added Merlin Falcon as R-Series alternative everywhere
+	  G-Series Brown Falcon appears.
+	* cpuid.c: Added rules for EPYC Embedded to differentiate (synth) for
+	  Snowy Owl and Naples, based on EPYC 3000 series.  Untested, because I
+	  have no examples.
+
+Fri Jan 31 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.man: Added instlatx64.atw.hu.
+	* cpuid.man: Added -l and -s options.
+
+Fri Jan 31 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added rudimentary (10,15) (synth) for AMD Zen 3.
+
+Fri Jan 31 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.man: Added linux kernel note about intel-family.h.
+	* cpuid.c: Added rudimentary Tremont (synth) & (uarch synth).
+	* cpuid.c: Added tentative Ice Lake NNPI (synth) & (uarch synth).
+	* cpuid.c: Added rudimentary (0,6),(10,6) Comet Lake [Coffee Lake]
+	  (synth) & (uarch synth).
+
+Fri Jan 31 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.man: Added Intel Microcode Update Guidance document.
+	* cpuid.c: Removed br.generic check from dc (Core) query.  It was useful
+	  in the Yonah era, but has been problematic since.  Instead, add a dG
+	  (Generic) query and use that where needed for the Yonah CPUs.  And a
+	  few other users of dc now use dG.
+	* cpuid.c: Added (synth) for Apollo Lake D0 (collision with B0/B1?) & E0.
+	* cpuid.c: Generalized P4500 & U4500 (Arrandale/Clarkdale) (synth) names.
+	* cpuid.c: Added Broadwell-DE V3 (synth) alternate stepping.
+	* cpuid.c: Added Broadwell H 43e (synth).
+	* cpuid.c: Added Pentium 3700U / 3800U (synth).
+	* cpuid.c: Added Apollo Lake (Broxton) (synth).
+	* cpuid.c: Added Atom x5-E8000 (synth).
+	* cpuid.c: Added Pentium G6900 (Clarkdale K0) (synth).
+	* cpuid.c: Added Core i*-900 (Clarksfield) (query dc) (synth).
+	* cpuid.c: Added E5-4600 (Ivy Bridge) (synth) names.
+	* cpuid.c: Prefixed E to Jasper Forest Xeon (synth) names.
+	* cpuid.c: Added Xeon E3-1200 (Kaby Lake) (synth) specific line.
+	* cpuid.c: Added Xeon 6500 names to Beckon (synth).
+	* cpuid.c: Generalized Pentium 900 (Sandy Bridge) (synth) names.
+	* cpuid.c: Added Celeron T3000 / 900 / SU2300 (Wolfdale) (synth) names.
+	* cpuid.c: Added Pentium T4000 (Wolfdale) (synth) names.
+	* cpuid.c: Added Celeron M ULV 700 (Penryn) (synth).
+	* cpuid.c: Correct query to dc for Sandy Bridge-E Core (synth).
+	* cpuid.c: Added Pentium 1405 (Sandy Bridge-E) (synth).
+	* cpuid.c: Added Xeon D-2100 (Skylake stepping 4) (synth) names.
+	* cpuid.c: Added Core i9-7000X (Skylake-X) (synth).
+	* cpuid.c: Changed case of x for SoFIA (synth).
+	* cpuid.c: Simplified Westmere-EP Xeon (synth) names.
+	* cpuid.c: Added Atom x*-A3900 (Apollo Lake) (synth) names.
+	* cpuid.c: Added Rangeley core name to Atom C2000 (synth) names.
+	* cpuid.c: Clarified that all (0,6),(4,15) CPUs are Broadwell-{E,EX}
+	  in (synth) lines.
+	* cpuid.c: Clarified that (0,6),(3,13) is Broadwell-U.
+	* cpuid.c: For (0,6),(4,6) (synth), MRG* 2018-08-31 shows stepping 1,
+	  so that must be the only known stepping: G0.
+	* cpuid.c: Corrected Broadwell-Y Core M (synth).
+	* cpuid.c: Added (0,6),(9,14),11 Coffee Lake Pentium & Celeron (synth).
+	* cpuid.c: Corrected (0,6),(9,14),11 fallback (synth).
+	* cpuid.c: Clarified transition from i*-8000 to i*-9000 at
+	  (0,6),(9,14),12 stepping in (synth) lines.
+	* cpuid.c: Added Puma 7 (synth).
+	* cpuid.c: Generalized Pentium B900C (Ivy Bridge) (synth).
+	* cpuid.c: Added Celeron G2000 (Haswell) (synth).
+	* cpuid.c: Clarified Haswell-E (synth).
+	* cpuid.c: Aded -4000 series to (0,6),(4,6) Core (synth) names.
+	* cpuid.c: Added (0,6),(3,14) Ivy Bridge Celeron (synth).
+	* cpuid.c: Corrected (0,6),(3,14) Cores as Ivy Bridge-E (synth).
+	* cpuid.c: Differentiate i*-8700 and i*-7700 Kaby Lake (synth).
+	* cpuid.c: Added (0,6),(8,14),9 Kaby Lake Pentium & Celeron (synth).
+	* cpuid.c: Differentiate (0,6),(8,14),9 Kaby Lake-Y and Amber Lake-Y
+	  (synth) with test for -8000 Series in brand name, because there seems
+	  to be no other way to tell.
+	* cpuid.c: Added XMM 7272 (SoFIA) (synth).
+	* cpuid.c: Added Coffee Lake R0 Xeon (synth).
+	* cpuid.c: Added Whiskey Lake W0 Pentium & Celeron (synth).
+	* cpuid.c: Correct (8,14) (uarch synth) to just Kaby Lake once all
+	  instances of Coffee lake had been eliminated from that family.  The
+	  (9,14) family continues to include both Kaby Lake & Coffee Lake.
+
+Fri Jan 31 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.man: Added Intel 600827 spec update.
+	* cpuid.c: Generalized Bay Trail-M/D (synth) names and expanded them.
+	* cpuid.c: Added Bay Trail-M/D D0/D1 (synth).
+
+Thu Jan 30 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added VIA die processes for as many uarchs/cores as I could
+	  find.
+
+Wed Jan 29 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added comments about various Intel spec updates.
+	* cpuid.man: Removed extra "315593" garbage line.
+	* cpuid.c: Added (synth) for Broadwell-E R0 stepping.
+	* cpuid.c: Added stepping number for Apollo Lake B0/B1.
+	* cpuid.c: Differentiate (synth) between Core & Xeon (0,6),(3,15)
+	  Haswell.
+	* cpuid.c: Differentiate (synth) between Core & Xeon (0,6),(2,12)
+	  Westmere/Gulftown.
+	* cpuid.c: Simplified more (synth) i*-*000 combinations.
+	* cpuid.c: Removed duplicate slash in one Haswell (synth) line.
+	* cpuid.c: Correct Itanium Merced model/stepping confusion.
+	* cpuid.c: Added KX-5000 & KH-20000 to Zhaoxin WuDaoKou (synth).
+	* cpuid.c: Added die proess to Zhaoxin WuDaoKou (uarch synth).
+	* cpuid.c: Added Zhaoxin LuJiaZiu (0,7),(3,11) model (synth) &
+	  (uarch synth).
+
+Tue Jan 28 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Differentiate (synth) between Bay Trail Pentiums, Celerons
+	  & Atoms.
+	* cpuid.c: Differentiate (synth) between Braswell Pentiums & Celerons.
+	* cpuid.c: Corrected (synth) steppings for Braswell.
+	* cpuid.c: Add J3000 series to (synth) for Braswell.
+	* cpuid.c: Remove Pentium & Celeron items from {Kaby,Coffee,Comet} Lake
+	  Core (synth).  I'd already created separate items for those, but
+	  missed removing the names from the Core-specific line.
+
 Mon Jan 27 2020 Todd Allen <todd.allen@etallen.com>
 	* Made new release.
 

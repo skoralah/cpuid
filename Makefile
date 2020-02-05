@@ -4,11 +4,11 @@ LDFLAGS?=
 ifneq (,$(findstring arch=i386,$(CFLAGS)))
 CISA=-m32
 endif
-CFL=$(CPPFLAGS) $(CFLAGS) $(CISA) -Wall -Wextra -Wshadow -Wcast-align -Wredundant-decls -Wbad-function-cast -Wcast-qual -Wwrite-strings -Waggregate-return -Wstrict-prototypes -Wmissing-prototypes -Wimplicit-fallthrough -Wunused-parameter -D_FILE_OFFSET_BITS=64 -DVERSION=$(VERSION)
+CFL=$(CPPFLAGS) $(CFLAGS) $(CISA) -Wall -W -Wshadow -Wcast-align -Wredundant-decls -Wbad-function-cast -Wcast-qual -Wwrite-strings -Waggregate-return -Wstrict-prototypes -Wmissing-prototypes -Wimplicit-fallthrough -Wunused-parameter -D_FILE_OFFSET_BITS=64 -DVERSION=$(VERSION)
 INSTALL_STRIP=-s
 
 PACKAGE=cpuid
-VERSION=20200127
+VERSION=20200203
 RELEASE=1
 
 PROG=$(PACKAGE)
@@ -32,7 +32,7 @@ SRCS=cpuid.c
 
 OTHER_SRCS=Makefile $(PROG).man cpuinfo2cpuid \
            $(PACKAGE).proto.spec $(PACKAGE).spec \
-           ChangeLog FUTURE LICENSE
+           ChangeLog FUTURE FAMILY.NOTES LICENSE
 OTHER_BINS=$(PROG).man cpuinfo2cpuid.man
 
 REL_DIR=../$(shell date +%Y-%m-%d)
@@ -75,11 +75,22 @@ clean:
 
 # Todd's Development rules
 
-$(PROG).i386: cpuid.c Makefile
-	$(CC) -m32 -Wl,--hash-style=both $(CFL) $(LDFLAGS) -o $@ cpuid.c
+OLD_DIR=/tmp/cpuid
+OLD_HOST_i386=hyena
+OLD_HOST_x86_64=iggy
 
+$(PROG).old: cpuid.c Makefile
+	ssh $(OLD_HOST) "rm -rf $(OLD_DIR); mkdir -p $(OLD_DIR)"
+	scp -p $^ $(OLD_HOST):$(OLD_DIR)
+	ssh $(OLD_HOST) "cd $(OLD_DIR); make cpuid"
+	scp -p $(OLD_HOST):$(OLD_DIR)/cpuid $(TARGET)
+	ssh $(OLD_HOST) "rm -rf $(OLD_DIR)"
+
+$(PROG).i386: cpuid.c Makefile
+	$(MAKE) -$(MAKEFLAGS) $(PROG).old TARGET=$@ OLD_HOST=$(OLD_HOST_i386)
+	
 $(PROG).x86_64: cpuid.c Makefile
-	$(CC) -m64 $(CFL) $(LDFLAGS) -o $@ cpuid.c
+	$(MAKE) -$(MAKEFLAGS) $(PROG).old TARGET=$@ OLD_HOST=$(OLD_HOST_x86_64)
 
 todd: $(PROG).i386 $(PROG).x86_64
 	rm -f ~/.bin/execs/i586/$(PROG)

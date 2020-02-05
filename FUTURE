@@ -1,40 +1,47 @@
 Intel:
-   Cooper Lake: what is its FMS?  Is it a Skylake or a Sunny Cove?
-   
    Amber Lake refresh: What is the FMS for its i*-10000 parts?
 
-   Cannon Lake (0,6),(6,6) spec update.
-   Ice Lake (0,6),(6,10) spec update.
-   Ice Lake (0,6),(6,12) spec update.
-   Tiger Lake (0,6),(8,12) spec update.
+   Cannon Lake [Palm Cove] (0,6),(6,6) spec update.
+   Ice Lake [Sunny Cove] (0,6),(6,10) spec update.
+   Ice Lake [Sunny Cove] (0,6),(6,12) spec update.
+   Tiger Lake [Willow Cove] (0,6),(8,12) spec update.
+   Tiger Lake [Willow Cove] (0,6),(8,13) spec update.
+   Atom Ice Lake NPPI (0,6),(9,13) spec update.  (wrong name?)
+   Comet Lake [Kaby Lake] (0,6),(10,5) spec update.
+   Comet Lake [Kaby Lake] (0,6),(10,6) spec update.
+   Rocket Lake (~2020?)
    Willow Cove (~2020)
    Golden Cove (~2021).
    Sapphire Rapids (~2021).
 
-   Atom (Lakefield) [Tremont] spec update.
+   Atom XMM 7272 (SoFIA) (0,6),(6,5) spec update.
+   Atom Jacobsville [Tremont] (0,6),(8,5) spec update.  (wrong name?)
+   Atom Elkhart Lake [Tremont] (0,6),(9,6) spec update.
+   Atom Jasper Lake [Tremont] (0,6),(9,12) spec update.
    Atom [Gracemont] (~2021).
+
+   Atom Puma 7 (0,6),(6,14) spec update.
+
+   Lakefield (Sunny Cove + 4x Tremont?): Sunny Cove & Tremont FMS?
 
 AMD:
    Zen 2 revision guide.
-   Zen 3.
-
-Zhaoxin: any information:
-   1st gen: ZhangJiang  (incl. KaiXian (desktop), Kaisheng (server))
-   2nd gen: WuDaoKou    (more models than (0,7),(1,11)?)
-   3rd gen: LuJiaZui    (e.g. KX-U6880)
+   Zen 3 models (Vermeer: desktop, Milan: server, Genesis Peak: Threadripper)
 
 --------------------------------------------------------------------------------
 
 These are not really future, but I have very little data on them:
 
-   Intel: Xeon Phi (Knights Ferry) (0,1),(0,0).
+   Intel: Xeon Phi (Knights Ferry) (0,11),(0,0).
+   Intel: Xeon Phi (Knights Corner) (0,11),(0,1) with 0x20000001 leaf.
    Intel: Xeon Phi (Knights Mill) (0,6),(8,5).
    Intel: Atom Z3400 (Merrifield) [Silvermont] (0,6),(4,10).
+   Intel: Atom (Apollo Lake) (0,6),(5,12),2.
+   Intel: Atom x3-C3000 (SoFIA) (0,6),(5,13).
+   Intel: Spreadtrum SC9853I-IA (0,6),(7,5).
    Intel: Atom S12x9 (Briarwood) is based on Cedar Trail, but the Intel docs
           provide no CPUID identification values.  And I can find no examples
           online.  Does anyone know the CPUID family/model/steppings?
-   Intel: I can find no cpuid information on Atom C1000.
-          (Possibly it is (0,6),(2,7) or (0,6),(3,5)?)
    AMD: Geneva (the Athlon II Neo counterpart of the Athlon II mobile Champlain, 
                 or the V-Series Champlain?) 
                [not seen in any revision guides yet, though]
@@ -42,11 +49,14 @@ These are not really future, but I have very little data on them:
    VIA: Nano 3000
    VIA: 0xc0000002 leaf (I have very limited info)
    VIA: 0xc0000003 leaf (I have no info)
+   Zhaoxin: ZhangJiang  (more models/steppings than (0,6),(0,15),14?
+   Zhaoxin: WuDaoKou    (more models than (0,7),(1,11)?)
+   Zhaoxin: LuJiaZui    (more models than (0,7),(3,11)?)
 
 --------------------------------------------------------------------------------
 
 Stashes of cpuid information:
 
    http://instlatx64.atw.hu (aka https://github.com/InstLatx64/InstLatx64)
-   http://www.cpu-world.com
-   http://valid.x86.fr/records.html
+   http://www.cpu-world.com (hard to navigate)
+   http://valid.x86.fr/records.html (limited info)

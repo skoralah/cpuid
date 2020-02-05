@@ -1,4 +1,4 @@
-%define version 20200127
+%define version 20200203
 %define release 1
 Summary: dumps CPUID information about the CPU(s)
 Name: cpuid
@@ -32,5 +32,5 @@ instruction, and also determines the exact model of CPU(s).
 %{_mandir}/man1/cpuid.1.gz
 %{_bindir}/cpuinfo2cpuid
 %{_mandir}/man1/cpuinfo2cpuid.1.gz
-%doc ChangeLog FUTURE 
+%doc ChangeLog FUTURE FAMILY.NOTES
 %license LICENSE
