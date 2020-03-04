@@ -1,4 +1,10 @@
 Intel:
+   CC150 CPU seems to be stepping (0,6),(9,14),13 = Coffee Lake R0, brand name
+   is just "Intel Core".
+
+   Cascade Lake refresh Xeons: Xeon Scalable 3xxxR, 4xxxR & 6xxxR (to be released
+   2020-02-23): still (0,6),(5,5),7?
+   
    Amber Lake refresh: What is the FMS for its i*-10000 parts?
 
    Cannon Lake [Palm Cove] (0,6),(6,6) spec update.
@@ -6,7 +12,7 @@ Intel:
    Ice Lake [Sunny Cove] (0,6),(6,12) spec update.
    Tiger Lake [Willow Cove] (0,6),(8,12) spec update.
    Tiger Lake [Willow Cove] (0,6),(8,13) spec update.
-   Atom Ice Lake NPPI (0,6),(9,13) spec update.  (wrong name?)
+   Spring Hill (aka Ice Lake NPP-I) (0,6),(9,13) spec update.
    Comet Lake [Kaby Lake] (0,6),(10,5) spec update.
    Comet Lake [Kaby Lake] (0,6),(10,6) spec update.
    Rocket Lake (~2020?)
@@ -15,7 +21,7 @@ Intel:
    Sapphire Rapids (~2021).
 
    Atom XMM 7272 (SoFIA) (0,6),(6,5) spec update.
-   Atom Jacobsville [Tremont] (0,6),(8,5) spec update.  (wrong name?)
+   Atom Elkhart Lake [Tremont] (0,6),(8,6) spec update.  (wrong name?)
    Atom Elkhart Lake [Tremont] (0,6),(9,6) spec update.
    Atom Jasper Lake [Tremont] (0,6),(9,12) spec update.
    Atom [Gracemont] (~2021).
@@ -25,6 +31,8 @@ Intel:
    Lakefield (Sunny Cove + 4x Tremont?): Sunny Cove & Tremont FMS?
 
 AMD:
+   Add EPYC series numbers (e.g. EPYC 7000 = Rome)
+
    Zen 2 revision guide.
    Zen 3 models (Vermeer: desktop, Milan: server, Genesis Peak: Threadripper)
 
@@ -45,10 +53,8 @@ These are not really future, but I have very little data on them:
    AMD: Geneva (the Athlon II Neo counterpart of the Athlon II mobile Champlain, 
                 or the V-Series Champlain?) 
                [not seen in any revision guides yet, though]
-   VIA: Nano 1000/2000 (Isaiah)
-   VIA: Nano 3000
-   VIA: 0xc0000002 leaf (I have very limited info)
    VIA: 0xc0000003 leaf (I have no info)
+   VIA: 0xc0000004 leaf (I have no info)
    Zhaoxin: ZhangJiang  (more models/steppings than (0,6),(0,15),14?
    Zhaoxin: WuDaoKou    (more models than (0,7),(1,11)?)
    Zhaoxin: LuJiaZui    (more models than (0,7),(3,11)?)

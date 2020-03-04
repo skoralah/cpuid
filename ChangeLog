@@ -1,4 +1,48 @@
-Sun Feb  3 2020 Todd Allen <todd.allen@etallen.com>
+Tue Feb 11 2020 Todd Allen <todd.allen@etallen.com>
+	* Made new release.
+
+Mon Feb 10 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Clarified Intel NNP-I (Spring Hill).
+	* cpuid.c: In decode_vendor(), report "Zhaoxin" even with VENDOR_VIA,
+	  if the brand string indicates so.
+	* cpuid.c: In 0xc0000004/ebx, make current voltage use the shift-4 + 700
+	  encoding used for other VIA voltages.
+
+Fri Feb  7 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.man: Use both Intel doc numbers for 329671/600827.
+	* cpuid.man: Added missing 329901/600834 Intel doc.
+
+Thu Feb  6 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added VIA 0xc0000004 leaf decoding.
+	* cpuid.c: Added X2_IMAGES special flag to pretty-print values in the
+	  2X encoding.
+	* cpuid.c: Added MINUS1_IMAGES special flag to pretty-print values with
+	  the "- 1" encoding.  (I finally got turned around about this being
+	  better than the older "raw" values.)
+
+Wed Feb  5 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Add VIA C7-D and Eden brands to (0,6),(0,10) (synth).
+	* cpuid.c: Differentiate VIA (0,6),(0,13) (synth) based on brand strings.
+	* cpuid.c: Overhaul of VIA 0xc0000002 leaf decoding.
+	* cpuid.c: Updated VIA Nano steppings (synth).
+	* cpuid.c: Removed extraneous WinChip & core words from C3 and later
+	  VIA CPUs (synth).
+
+Wed Feb  5 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Changed mp_synth fields to use '=' separator instead of ':',
+	  like every other value.
+	* cpuid.c: Changed processor serial number to use '=' separator instead
+	  of ':', like every other value.
+
+Tue Feb  4 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.man: Added 336907 doc with 7/0/ecx/TME bit description.
+	* cpuid.c: Removed LX* comment from 7/0/ecx/TME bit description.  It's
+	  documented after all.
+
+Tue Feb  4 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Clarified (0,6),(10,6) Comet Lake-U (synth).
+
+Mon Feb  3 2020 Todd Allen <todd.allen@etallen.com>
 	* Made new release.
 
 Mon Feb  3 2020 Todd Allen <todd.allen@etallen.com>

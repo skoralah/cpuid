@@ -1,6 +1,6 @@
 Intel Core architecture:
 
-                 ------Mobile------   ---Desktop/UP Server---   CL Server     DP Server      MP Server
+                 -------Mobile------- ----Desktop/UP Server---- CL Server     DP Server      MP Server
    -------------------------------------------------------------------------------------------------------
    1-core 65nm   Merom-L              Conroe-L
    1-core 45nm   Penryn-L                                       Wolfdale-CL
@@ -166,6 +166,14 @@ Intel Phi (brand name) / MIC (architecture name):
    Knights Landing : 72 Airmont cores
    Knights Hill    : (canceled; would've shrunk Knights Landing to 10nm)
    Knights Mill    : 72 Airmont(?) cores
+
+Intel AI:
+
+   Spring Hill : 2x Sunny Cove (derived) cores + 12 ICE (Vision P6 DSP)
+
+Intel Hybrid:
+
+   Lakefield : 1x Sunny Cove + 4x Tremont(?)
 
 ======================================================================================================================================
 

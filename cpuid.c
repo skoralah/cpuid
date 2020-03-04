@@ -186,7 +186,9 @@ typedef struct {
    ccstring*     images;
 } named_item;
 
-#define NIL_IMAGES  (ccstring*)NULL
+#define NIL_IMAGES     (ccstring*)NULL
+#define MINUS1_IMAGES  (ccstring*)1
+#define X2_IMAGES      (ccstring*)2
 
 static unsigned int
 get_max_len (named_item    names[],
@@ -218,18 +220,29 @@ print_names(unsigned int  value,
       unsigned int  field = BIT_EXTRACT_LE(value,
                                            names[i].low_bit,
                                            names[i].high_bit + 1);
-      if (names[i].images != NIL_IMAGES
-          && names[i].images[field] != NULL) {
-         printf("      %-*s = %s\n",
+      if (names[i].images == X2_IMAGES) {
+         printf("      %-*s = %.1f\n",
                 max_len,
                 names[i].name,
-                names[i].images[field]);
-      } else {
+                (double)field / 2.0);
+      } else if (names[i].images == MINUS1_IMAGES) {
+         printf("      %-*s = 0x%0llx (%llu)\n",
+                max_len,
+                names[i].name,
+                (unsigned long long)field + 1ULL,
+                (unsigned long long)field + 1ULL);
+      } else if (names[i].images == NIL_IMAGES
+                 || names[i].images[field] == NULL) {
          printf("      %-*s = 0x%0x (%u)\n",
                 max_len,
                 names[i].name,
                 field,
                 field);
+      } else {
+         printf("      %-*s = %s\n",
+                max_len,
+                names[i].name,
+                names[i].images[field]);
       }
    }
 }
@@ -402,6 +415,10 @@ typedef struct {
          boolean    mediagx;
       };
       struct /* VIA */ {
+         boolean    c7;
+         boolean    c7m;
+         boolean    c7d;
+         boolean    eden;
          boolean    zhaoxin;
       };
    } br;
@@ -457,7 +474,7 @@ typedef struct {
                         FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
                         FALSE, 0 }, \
                       { FALSE }, \
-                      { FALSE } }, \
+                      { FALSE, FALSE, FALSE, FALSE, FALSE } }, \
                     { FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE }, \
                     FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
                     FALSE, FALSE, FALSE, \
@@ -1582,6 +1599,10 @@ decode_brand_string(const char*    brand,
 
    stash->br.mediagx     = strstr(brand, "MediaGXtm") != NULL;
 
+   stash->br.c7          = strstr(brand, "C7") != NULL;
+   stash->br.c7m         = strstr(brand, "C7-M") != NULL;
+   stash->br.c7d         = strstr(brand, "C7-D") != NULL;
+   stash->br.eden        = strstr(brand, "Eden") != NULL;
    stash->br.zhaoxin     = strstr(brand, "ZHAOXIN") != NULL;
 }
 
@@ -1874,6 +1895,10 @@ static boolean is_amd_egypt_athens_8xx(const code_stash_t*  stash)
 /*
 ** VIA major query
 */
+#define v7 (is_via && stash->br.c7)
+#define vM (is_via && stash->br.c7m)
+#define vD (is_via && stash->br.c7d)
+#define vE (is_via && stash->br.eden)
 #define vZ (is_via && stash->br.zhaoxin)
 
 /*
@@ -1896,13 +1921,18 @@ static boolean is_amd_egypt_athens_8xx(const code_stash_t*  stash)
 #define t8 ((tm_rev(0x01040000) || tm_rev(0x01040000)) && stash->L2_4w_512K)
 
 static cstring
-decode_vendor(vendor_t  vendor)
+decode_vendor(vendor_t             vendor,
+              const code_stash_t*  stash)
 {
    switch (vendor) {
    case VENDOR_INTEL:     return "Intel";
    case VENDOR_AMD:       return "AMD";
    case VENDOR_CYRIX:     return "Cyrix";
-   case VENDOR_VIA:       return "VIA";
+   case VENDOR_VIA:       if (stash->br.zhaoxin) {
+                             return "Zhaoxin";
+                          } else {
+                             return "VIA"; 
+                          }
    case VENDOR_TRANSMETA: return "Transmeta";
    case VENDOR_UMC:       return "UMC";
    case VENDOR_NEXGEN:    return "NexGen";
@@ -2203,7 +2233,6 @@ static void
 decode_uarch_via(unsigned int         val,
                  arch_t*              arch,
                  const code_stash_t*  stash)
-                 
 {
    init_arch(arch);
    
@@ -2383,7 +2412,7 @@ print_uarch(const code_stash_t*  stash)
    arch_t  arch;
    decode_uarch(stash->val_1_eax, stash->vendor, stash, &arch);
    if (arch.uarch != NULL || arch.family != NULL || arch.phys != NULL) {
-      ccstring  vendor = decode_vendor(stash->vendor);
+      ccstring  vendor = decode_vendor(stash->vendor, stash);
       printf("   (uarch synth) =");
       if (vendor != NULL) {
          printf(" %s", vendor);
@@ -2580,7 +2609,8 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMS (    0, 5,  0, 8,  1,     "Intel Pentium MMX P55C (Tillamook A0)");
    FMS (    0, 5,  0, 8,  2,     "Intel Pentium MMX P55C (Tillamook B2)");
    FM  (    0, 5,  0, 8,         "Intel Pentium MMX P55C (Tillamook)");
-   // Intel docs (329676).
+   // Intel docs (329676) provides stepping names, but no numbers.
+   // However, A0 is the only name.
    FM  (    0, 5,  0, 9,         "Intel Quark X1000 / D1000 / D2000 / C1000 (Lakemont)");
    F   (    0, 5,                "Intel Pentium (unknown model)");
    FM  (    0, 6,  0, 0,         "Intel Pentium Pro A-step");
@@ -2893,7 +2923,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  2,10,     sX, "Intel Xeon E3-1100 / E3-1200 v1 (Sandy Bridge)");
    FMQ (    0, 6,  2,10,     dP, "Intel Pentium G500/G600/G800 / Pentium 900 (Sandy Bridge)");
    FM  (    0, 6,  2,10,         "Intel Core (unknown type) (Sandy Bridge)");
-   // Intel docs (323254: i7-900, 323338: Xeon 3600 , 323372: Xeon 5600).
+   // Intel docs (323254: i7-900, 323338: Xeon 3600, 323372: Xeon 5600).
    // https://en.wikipedia.org/wiki/Westmere_(microarchitecture) provided
    // A0 & B0 stepping values.
    FMSQ(    0, 6,  2,12,  0, dc, "Intel Core i7-900 / Core i7-980X (Gulftown A0)");
@@ -3131,7 +3161,9 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMQ (    0, 6,  4,15,     sX, "Intel Xeon E5-1600 / E5-2600 / E5-4600 v4 (Broadwell-E) / E7-4800 / E7-8800 v4 (Broadwell-EX)");
    FM  (    0, 6,  4,15,         "Intel Core (unknown type) (Broadwell-E / Broadwell-EX)");
    // Intel docs (335901) omit almost all details for the Core versions of
-   // (0,6),(5,5), but (336065, 338848, 338854) provides some for Xeons.
+   // (0,6),(5,5).  But Intel docs (336065: Xeon Scalable steppings 2 & 4,
+   // 338848: Xeon Scalable (2nd gen) stepping 7, and 338854: Xeon D-2000
+   // stepping 2) provides some.
    // MRG* 2019-11-13 mentions stepping 3, but doesn't mention stepping name.
    // geekbench.com has an "Intel Xeon Gold 6230" example of a stepping 5, but
    // no stepping name.
@@ -3280,7 +3312,7 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMS (    0, 6,  9, 6,  0,     "Intel Atom (Elkhart Lake A0)");
    FM  (    0, 6,  9, 6,         "Intel Atom (Elkhart Lake)");
    FM  (    0, 6,  9,12,         "Intel Atom (Jasper Lake)"); // LX*
-   FM  (    0, 6,  9,13,         "Intel (unknown model) (Ice Lake NNPI)"); // LX* (is NNPI really part of the core name?)
+   FM  (    0, 6,  9,13,         "Intel NNP I-1000 (Spring Hill)"); // LX*
    // Intel docs (334663, 335718, 336466, 338014) omit the stepping numbers for
    // (0,6),(9,14) B0, but (337346) provides some.
    // Coreboot* provides the 9 (B0) stepping.
@@ -3307,9 +3339,9 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FM  (    0, 6, 10, 5,         "Intel (unknown model) (Comet Lake-H/S)");
    // MRG* 2019-11-13 & instlatx64 example
    // Coreboot* provides steppings.
-   FMS (    0, 6, 10, 6,  0,     "Intel Core i*-10000 (Comet Lake A0)");
-   FMS (    0, 6, 10, 6,  1,     "Intel Core i*-10000 (Comet Lake K0/S0)");
-   FM  (    0, 6, 10, 6,         "Intel Core i*-10000 (Comet Lake)");
+   FMS (    0, 6, 10, 6,  0,     "Intel Core i*-10000 (Comet Lake-U A0)");
+   FMS (    0, 6, 10, 6,  1,     "Intel Core i*-10000 (Comet Lake-U K0/S0)");
+   FM  (    0, 6, 10, 6,         "Intel Core i*-10000 (Comet Lake-U)");
    FQ  (    0, 6,            sX, "Intel Xeon (unknown model)");
    FQ  (    0, 6,            se, "Intel Xeon (unknown model)");
    FQ  (    0, 6,            MC, "Intel Mobile Celeron (unknown model)");
@@ -4260,50 +4292,57 @@ decode_synth_via(unsigned int         val,
    START;
    FM  (0, 5,  0, 4,         "VIA WinChip (C6)");
    FM  (0, 5,  0, 8,         "VIA WinChip 2 (C6-2)");
-   FM  (0, 6,  0, 6,         "VIA C3 (Samuel WinChip C5A core)");
-   FMS (0, 6,  0, 7,  0,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
-   FMS (0, 6,  0, 7,  1,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
-   FMS (0, 6,  0, 7,  2,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
-   FMS (0, 6,  0, 7,  3,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
-   FMS (0, 6,  0, 7,  4,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
-   FMS (0, 6,  0, 7,  5,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
-   FMS (0, 6,  0, 7,  6,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
-   FMS (0, 6,  0, 7,  7,     "VIA C3 (Samuel 2 WinChip C5B core) / Eden ESP 4000/5000/6000, .15um");
-   FM  (0, 6,  0, 7,         "VIA C3 (Ezra WinChip C5C core), .13um");
-   FM  (0, 6,  0, 8,         "VIA C3 (Ezra-T WinChip C5N core)");
-   FMS (0, 6,  0, 9,  0,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS (0, 6,  0, 9,  1,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS (0, 6,  0, 9,  2,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS (0, 6,  0, 9,  3,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS (0, 6,  0, 9,  4,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS (0, 6,  0, 9,  5,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS (0, 6,  0, 9,  6,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FMS (0, 6,  0, 9,  7,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah WinChip C5XL core)");
-   FM  (0, 6,  0, 9,         "VIA C3 / C3-M / Eden-N (Antaur WinChip C5P core)");
-   FM  (0, 6,  0,10,         "VIA C7 / C7-M (Esther WinChip C5J core)");
-   FM  (0, 6,  0,13,         "VIA C7 / C7-M / C7-D / Eden (Esther C5J core)");
-   // The steppings (0-13) for Isaiah come from this post by "redray", circa
-   // Apr 2013:
+   FM  (0, 6,  0, 6,         "VIA C3 (Samuel C5A)");
+   FMS (0, 6,  0, 7,  0,     "VIA C3 (Samuel 2 C5B) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  1,     "VIA C3 (Samuel 2 C5B) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  2,     "VIA C3 (Samuel 2 C5B) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  3,     "VIA C3 (Samuel 2 C5B) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  4,     "VIA C3 (Samuel 2 C5B) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  5,     "VIA C3 (Samuel 2 C5B) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  6,     "VIA C3 (Samuel 2 C5B) / Eden ESP 4000/5000/6000, .15um");
+   FMS (0, 6,  0, 7,  7,     "VIA C3 (Samuel 2 C5B) / Eden ESP 4000/5000/6000, .15um");
+   FM  (0, 6,  0, 7,         "VIA C3 (Ezra C5C), .13um");
+   FM  (0, 6,  0, 8,         "VIA C3 (Ezra-T C5N)");
+   FMS (0, 6,  0, 9,  0,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah C5XL)");
+   FMS (0, 6,  0, 9,  1,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah C5XL)");
+   FMS (0, 6,  0, 9,  2,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah C5XL)");
+   FMS (0, 6,  0, 9,  3,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah C5XL)");
+   FMS (0, 6,  0, 9,  4,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah C5XL)");
+   FMS (0, 6,  0, 9,  5,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah C5XL)");
+   FMS (0, 6,  0, 9,  6,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah C5XL)");
+   FMS (0, 6,  0, 9,  7,     "VIA C3 / Eden ESP 7000/8000/10000 (Nehemiah C5XL)");
+   FM  (0, 6,  0, 9,         "VIA C3 / C3-M / Eden-N (Antaur C5P)");
+   // VIA unpublished BIOS Guide for C7-D.
+   FM  (0, 6,  0,10,         "VIA C7 / C7-M / C7-D / Eden (Esther C5J Model A)");
+   // VIA unpublished BIOS Guide for C7-D.
+   // Brand string can be used to differentiate model D CPUs.
+   FMQ (0, 6,  0,13,     vM, "VIA C7-M (Esther C5J Model D)");
+   FMQ (0, 6,  0,13,     vD, "VIA C7-D (Esther C5J Model D)");
+   FMQ (0, 6,  0,13,     v7, "VIA C7 (Esther C5J Model D)");
+   FMQ (0, 6,  0,13,     vE, "VIA Eden (Esther C5J Model D)");
+   FM  (0, 6,  0,13,         "VIA (unknown type) (Esther C5J Model D)");
+   // VIA unpublished BIOS Guide for Nano, Eden (for steppings 3-14, other than
+   // Zhaoxin).
+   //
+   // Steppings 0-2 for Isaiah come from this post by "redray", circa Apr 2013:
    //    https://forum.osdev.org/viewtopic.php?f=1&t=26351
-   // It presents an excerpt from "VIA Nano Processor X2X4 BIOS Guide 2.47",
-   // which apparently is only available under NDA.  The "CN" names align with
-   // information on isntlatx64, and the steppings at least make sense.
+   // It presents an excerpt from "VIA Nano Processor X2X4 BIOS Guide 2.47".
    // 
    // Die size depends on core, but it's unclear which cores are which:
    //    Isaiah    = 65nm, 40nm
    //    Isaiah II = 28nm
    //    ZhangJiang (Zhaoxin) = 28nm ?
-   FMS (0, 6,  0,15,  0,     "VIA Nano (Isaiah CNA A0)");
-   FMS (0, 6,  0,15,  1,     "VIA Nano (Isaiah CNA A1)");
-   FMS (0, 6,  0,15,  2,     "VIA Nano (Isaiah CNA A2)");
-   FMS (0, 6,  0,15,  3,     "VIA Nano (Isaiah CNA A3)");
-   FMS (0, 6,  0,15,  8,     "VIA Nano (Isaiah CNB A1)");
-   FMS (0, 6,  0,15, 10,     "VIA Nano (Isaiah CNC A2)");
-   FMS (0, 6,  0,15, 12,     "VIA Nano (Isaiah CNQ A1)");
-   FMS (0, 6,  0,15, 13,     "VIA Nano (Isaiah CNQ A2)");
+   FMS (0, 6,  0,15,  0,     "VIA Nano 1000/2000 (Isaiah CNA A0)"); // redray; instlatx64 example
+   FMS (0, 6,  0,15,  1,     "VIA Nano 1000/2000 (Isaiah CNA A1)"); // redray; model numbers assumed because of bracketing between 0 & 3
+   FMS (0, 6,  0,15,  2,     "VIA Nano 1000/2000 (Isaiah CNA A2)"); // redray; model numbers assumed because of bracketing between 0 & 3
+   FMS (0, 6,  0,15,  3,     "VIA Nano 1000/2000 (Isaiah CNA A3)");
+   FMS (0, 6,  0,15,  8,     "VIA Nano 3000 (Isaiah CNB A1)");
+   FMS (0, 6,  0,15, 10,     "VIA Nano 3000 (Isaiah CNC A2)");
+   FMS (0, 6,  0,15, 12,     "VIA Nano X2 4000 / QuadCore 4000 (Isaiah CNQ A1)");
+   FMS (0, 6,  0,15, 13,     "VIA Nano X2 4000 / QuadCore 4000 (Isaiah CNQ A2)");
    FMSQ(0, 6,  0,15, 14, vZ, "Zhaoxin KaiXian/Kaisheng ZX-C/ZX-C+");
-   FMS (0, 6,  0,15, 14,     "VIA Eden (Isaiah CNR)");
-   FM  (0, 6,  0,15,         "VIA Nano / Eden (Isaiah)");
+   FMS (0, 6,  0,15, 14,     "VIA Eden X4 4000 (Isaiah CNR)");
+   FM  (0, 6,  0,15,         "VIA Nano / Eden (unknown type) (Isaiah)");
    F   (0, 6,                "VIA C3 / C3-M / C7 / C7-M / Eden / Eden ESP 7000/8000/10000 / Nano (unknown model)");
    FM  (0, 7,  0,11,         "Zhaoxin KaiXian KX-5000 / Kaisheng KH-20000 (WuDaoKou)"); // geekbench.com example
    DEFAULT                 ("unknown");
@@ -4797,7 +4836,7 @@ static void decode_mp_synth(code_stash_t*  stash)
 
 static void print_mp_synth(const struct mp*  mp)
 {
-   printf("   (multi-processing synth): ");
+   printf("   (multi-processing synth) = ");
    if (mp->method == NULL) {
       printf("?");
    } else if (mp->cores > 1) {
@@ -4814,7 +4853,7 @@ static void print_mp_synth(const struct mp*  mp)
    }
    printf("\n");
 
-   printf("   (multi-processing method): %s\n", mp->method);
+   printf("   (multi-processing method) = %s\n", mp->method);
 }
 
 static int bits_needed(unsigned long  v)
@@ -5421,9 +5460,9 @@ static void
 print_4_ebx(unsigned int  value)
 {
    static named_item  names[]
-      = { { "system coherency line size - 1"          ,  0, 11, NIL_IMAGES },
-          { "physical line partitions - 1"            , 12, 21, NIL_IMAGES },
-          { "ways of associativity - 1"               , 22, 31, NIL_IMAGES },
+      = { { "system coherency line size"              ,  0, 11, MINUS1_IMAGES },
+          { "physical line partitions"                , 12, 21, MINUS1_IMAGES },
+          { "ways of associativity"                   , 22, 31, MINUS1_IMAGES },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5434,7 +5473,7 @@ static void
 print_4_ecx(unsigned int  value)
 {
    static named_item  names[]
-      = { { "number of sets - 1"                      ,  0, 31, NIL_IMAGES },
+      = { { "number of sets"                          ,  0, 31, MINUS1_IMAGES },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5658,7 +5697,7 @@ print_7_0_ecx(unsigned int  value)
           { "VPCLMULQDQ instruction"                  , 10, 10, bools },
           { "AVX512_VNNI: neural network instructions", 11, 11, bools },
           { "AVX512_BITALG: bit count/shiffle"        , 12, 12, bools },
-          { "TME: Total Memory Encryption"            , 13, 13, bools }, // LX*
+          { "TME: Total Memory Encryption"            , 13, 13, bools },
           { "AVX512: VPOPCNTDQ instruction"           , 14, 14, bools },
           { "5-level paging"                          , 16, 16, bools },
           { "BNDLDX/BNDSTX MAWAU value in 64-bit mode", 17, 21, NIL_IMAGES },
@@ -5995,7 +6034,7 @@ static void
 print_10_n_eax(unsigned int  value)
 {
    static named_item  names[]
-      = { { "length of capacity bit mask - 1"         ,  0,  4, NIL_IMAGES },
+      = { { "length of capacity bit mask"             ,  0,  4, MINUS1_IMAGES },
         };
 
    print_names(value, names, LENGTH(names),
@@ -6029,7 +6068,7 @@ static void
 print_10_3_eax(unsigned int  value)
 {
    static named_item  names[]
-      = { { "maximum throttling value - 1"            ,  0, 11, NIL_IMAGES },
+      = { { "maximum throttling value"                ,  0, 11, MINUS1_IMAGES },
         };
 
    print_names(value, names, LENGTH(names),
@@ -6242,7 +6281,7 @@ print_18_n_edx(unsigned int  value)
 
    static named_item  names[]
       = { { "translation cache type"                  ,  0,  4, tlbs },
-          { "translation cache level - 1"             ,  5,  7, NIL_IMAGES },
+          { "translation cache level"                 ,  5,  7, MINUS1_IMAGES },
           { "fully associative"                       ,  8,  8, bools },
           { "maximum number of addressible IDs"       , 14, 25, NIL_IMAGES },
         };
@@ -7664,9 +7703,9 @@ static void
 print_8000001d_ebx(unsigned int  value)
 {
    static named_item  names[]
-      = { { "line size in bytes - 1"                  ,  0, 11, NIL_IMAGES },
-          { "physical line partitions - 1"            , 12, 21, NIL_IMAGES },
-          { "number of ways - 1"                      , 22, 31, NIL_IMAGES },
+      = { { "line size in bytes"                      ,  0, 11, MINUS1_IMAGES },
+          { "physical line partitions"                , 12, 21, MINUS1_IMAGES },
+          { "number of ways"                          , 22, 31, MINUS1_IMAGES },
         };
 
    print_names(value, names, LENGTH(names),
@@ -7716,7 +7755,7 @@ print_8000001e_ebx_f16(unsigned int  value)
 {
    static named_item  names[]
       = { { "compute unit ID"                         ,  0,  7, NIL_IMAGES },
-          { "cores per compute unit - 1"              ,  8,  9, NIL_IMAGES },
+          { "cores per compute unit"                  ,  8,  9, MINUS1_IMAGES },
         };
 
    printf("   Compute Unit Identifiers (0x8000001e/ebx):\n");
@@ -7729,7 +7768,7 @@ print_8000001e_ebx_gt_f16(unsigned int  value)
 {
    static named_item  names[]
       = { { "core ID"                                 ,  0,  7, NIL_IMAGES },
-          { "threads per core - 1"                    ,  8, 15, NIL_IMAGES },
+          { "threads per core"                        ,  8, 15, MINUS1_IMAGES },
         };
 
    printf("   Core Identifiers (0x8000001e/ebx):\n");
@@ -7742,7 +7781,7 @@ print_8000001e_ecx(unsigned int  value)
 {
    static named_item  names[]
       = { { "node ID"                                 ,  0,  7, NIL_IMAGES },
-          { "nodes per processor - 1"                 ,  8, 10, NIL_IMAGES },
+          { "nodes per processor"                     ,  8, 10, MINUS1_IMAGES },
         };
 
    printf("   Node Identifiers (0x8000001e/ecx):\n");
@@ -7897,16 +7936,16 @@ print_c0000001_edx(unsigned int  value)
    static named_item  names[]
       = { { "alternate instruction set"                ,  0,  0, bools }, // sandpile.org
           { "alternate instruction set enabled"        ,  1,  1, bools }, // sandpile.org
-          { "random number generator"                  ,  2,  2, bools }, // LX*
-          { "random number generator enabled"          ,  3,  3, bools }, // LX*
+          { "random number generator"                  ,  2,  2, bools },
+          { "random number generator enabled"          ,  3,  3, bools },
           { "LongHaul MSR 0000_110Ah"                  ,  4,  4, bools }, // sandpile.org
           { "FEMMS"                                    ,  5,  5, bools }, // sandpile.org
-          { "advanced cryptography engine (ACE)"       ,  6,  6, bools }, // LX*
-          { "advanced cryptography engine (ACE)enabled",  7,  7, bools }, // LX*
-          { "montgomery multiplier/hash (ACE2)"        ,  8,  8, bools }, // LX*
-          { "montgomery multiplier/hash (ACE2) enabled",  9,  9, bools }, // LX*
-          { "padlock hash engine (PHE)"                , 10, 10, bools }, // LX*
-          { "padlock hash engine (PHE) enabled"        , 11, 11, bools }, // LX*
+          { "advanced cryptography engine (ACE)"       ,  6,  6, bools },
+          { "advanced cryptography engine (ACE)enabled",  7,  7, bools },
+          { "montgomery multiplier/hash (ACE2)"        ,  8,  8, bools },
+          { "montgomery multiplier/hash (ACE2) enabled",  9,  9, bools },
+          { "padlock hash engine (PHE)"                , 10, 10, bools },
+          { "padlock hash engine (PHE) enabled"        , 11, 11, bools },
           { "padlock montgomery mult. (PMM)"           , 12, 12, bools }, // LX*
           { "padlock montgomery mult. (PMM) enabled"   , 13, 13, bools }, // LX*
         };
@@ -7917,24 +7956,120 @@ print_c0000001_edx(unsigned int  value)
 }
 
 static void
-print_c0000002_eax(unsigned int  value)
+print_c0000002_ebx(unsigned int  value)
 {
-   // This information is from Juerg Haefliger.
+   printf("      input voltage (mV)                 = %d (0x%0x)\n",
+          (BIT_EXTRACT_LE(value, 0, 8) << 4) + 700,
+          BIT_EXTRACT_LE(value, 0, 8));
+
    static named_item  names[]
-      = { { "core temperature (degrees C)"       ,  8, 15, NIL_IMAGES },
+      = { { "current clock multipler"                 ,  8, 15, NIL_IMAGES },
+          { "clock ratio transition in progress"      , 16, 16, bools },
+          { "voltage transition in progress"          , 17, 17, bools },
+          { "thermal monitor 2 transition"            , 18, 18, bools },
+          { "thermal monitor 2 transition"            , 19, 19, bools },
+          { "performance control MSR transition"      , 20, 21, NIL_IMAGES },
+          { "lowest clock ratio"                      , 24, 31, NIL_IMAGES },
         };
 
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 28);
+               /* max_len => */ 34);
 }
 
 static void
-print_c0000002_ebx(unsigned int  value)
+print_c0000002_ecx(unsigned int  value)
 {
-   // This information is from Juerg Haefliger.
-   printf("      input voltage (mV)           = %d (0x%0x)\n",
+   printf("      highest voltage (mV)               = %d (0x%0x)\n",
           (BIT_EXTRACT_LE(value, 0, 8) << 4) + 700,
           BIT_EXTRACT_LE(value, 0, 8));
+   printf("      lowest voltage (mV)                = %d (0x%0x)\n",
+          (BIT_EXTRACT_LE(value, 16, 24) << 4) + 700,
+          BIT_EXTRACT_LE(value, 16, 24));
+
+   static named_item  names[]
+      = { { "highest clock multiplier"                ,  8, 15, NIL_IMAGES },
+          { "lowest clock multiplier"                 , 24, 31, NIL_IMAGES },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 34);
+}
+
+static void
+print_c0000002_edx(unsigned int  value)
+{
+   static ccstring  mb_reset[1<<1]  = { "0xffffffff (0)",
+                                        "0x000ffff0 (1)" };
+   static ccstring  bus_clock[1<<2] = { "100 MHz (0)",
+                                        "133 MHz (1)",
+                                        "200 MHz (2)",
+                                        "166 MHz (3)" };
+
+   static named_item  names[]
+      = { { "MB reset vector"                         , 14, 14, mb_reset },
+          { "APIC cluster ID"                         , 16, 17, NIL_IMAGES },
+          { "input front side bus clock"              , 16, 17, bus_clock },
+          { "APIC agent ID"                           , 20, 21, NIL_IMAGES },
+          { "current clock multiplier"                , 22, 26, NIL_IMAGES },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 34);
+}
+
+static void
+print_c0000004_eax(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "thermal monitor temperature"             ,  0,  7, NIL_IMAGES },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 0);
+}
+
+static void
+print_c0000004_ebx(unsigned int  value)
+{
+   printf("      current voltage (mV)                     = %d (0x%0x)\n",
+          (BIT_EXTRACT_LE(value, 0, 8) << 4) + 700,
+          BIT_EXTRACT_LE(value, 0, 8));
+
+   // This is a mirror of MSR 198h [31:0]
+   // If it had been read via rdmsr, this would be eax.
+
+   static named_item  names[]
+      = { { "current clock ratio"                     ,  8, 15, X2_IMAGES },
+          { "clock ratio transition in progress"      , 16, 16, bools },
+          { "voltage transition in progress"          , 17, 17, bools },
+          { "thermal monitor 2 transition in progress", 18, 18, NIL_IMAGES },
+          { "thermal monitor 2 transition in progress", 19, 19, NIL_IMAGES },
+          { "IA32_PERF_CTL transition in progress"    , 20, 20, NIL_IMAGES },
+          { "IA32_PERF_CTL transition in progress"    , 21, 21, NIL_IMAGES },
+          { "lowest clock ratio"                      , 24, 30, X2_IMAGES },
+          { "XE operation (R/O)"                      , 31, 31, bools },
+          
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 40);
+}
+
+static void
+print_c0000004_ecx(unsigned int  value)
+{
+   // This is a mirror of MSR 198h [63:32]
+   // If it had been read via rdmsr, this would be edx.
+
+   static named_item  names[]
+      = { { "highest supported voltage"               ,  0,  7, NIL_IMAGES },
+          { "highest supported clock ratio"           ,  8, 15, X2_IMAGES },
+          { "lowest supported voltage"                , 16, 23, NIL_IMAGES },
+          { "lowest supported clock ratio"            , 24, 31, X2_IMAGES },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 40);
 }
 
 static void
@@ -8176,7 +8311,7 @@ print_reg (unsigned int        reg,
          }
       }
    } else if (reg == 3) {
-      printf("   processor serial number:"
+      printf("   processor serial number ="
              " %04X-%04X-%04X-%04X-%04X-%04X\n",
              stash->val_1_eax >> 16, stash->val_1_eax & 0xffff, 
              words[WORD_EDX] >> 16, words[WORD_EDX] & 0xffff, 
@@ -8187,8 +8322,8 @@ print_reg (unsigned int        reg,
       print_4_ebx(words[WORD_EBX]);
       print_4_ecx(words[WORD_ECX]);
       print_4_edx(words[WORD_EDX]);
-      printf("      number of sets - 1 (s)               = %u\n",
-             words[WORD_ECX]);
+      printf("      number of sets (s)                   = %llu\n",
+             (unsigned long long)words[WORD_ECX] + 1ULL);
       print_4_synth(words);
    } else if (reg == 5) {
       printf("   MONITOR/MWAIT (5):\n");
@@ -8544,14 +8679,15 @@ print_reg (unsigned int        reg,
       print_80000008_eax(words[WORD_EAX]);
       print_80000008_ebx(words[WORD_EBX]);
       printf("   Size Identifiers (0x80000008/ecx):\n");
+      unsigned int  num_thrs = BIT_EXTRACT_LE(stash->val_80000008_ecx, 0, 8);
       if (Synth_Family(stash->val_80000001_eax) > 0x16) {
-         printf("      number of threads - 1               = 0x%x (%u)\n",
-                BIT_EXTRACT_LE(stash->val_80000008_ecx,  0,  8),
-                BIT_EXTRACT_LE(stash->val_80000008_ecx,  0,  8));
+         printf("      number of threads                   = 0x%llx (%llu)\n",
+                (unsigned long long)num_thrs + 1ULL,
+                (unsigned long long)num_thrs + 1ULL);
       } else {
-         printf("      number of CPU cores - 1             = 0x%x (%u)\n",
-                BIT_EXTRACT_LE(stash->val_80000008_ecx,  0,  8),
-                BIT_EXTRACT_LE(stash->val_80000008_ecx,  0,  8));
+         printf("      number of CPU cores                 = 0x%llx (%llu)\n",
+                (unsigned long long)num_thrs + 1ULL,
+                (unsigned long long)num_thrs + 1ULL);
       }
       print_80000008_ecx(words[WORD_ECX]);
       print_80000008_edx(words[WORD_EDX]);
@@ -8579,7 +8715,8 @@ print_reg (unsigned int        reg,
       printf("      --- cache %d ---\n", try);
       print_8000001d_eax(words[WORD_EAX]);
       print_8000001d_ebx(words[WORD_EBX]);
-      printf("      number of sets - 1              = %u\n", words[WORD_ECX]);
+      printf("      number of sets                  = %llu\n",
+             (unsigned long long)words[WORD_ECX] + 1ULL);
       print_8000001d_edx(words[WORD_EDX]);
       print_8000001d_synth(words);
    } else if (reg == 0x8000001e) {
@@ -8603,8 +8740,9 @@ print_reg (unsigned int        reg,
          printf("   PQoS Enforcement for Memory Bandwidth (0x80000020):\n");
          print_80000020_0_ebx(words[WORD_EBX]);
       } else if (try == 1) {
-         printf("      capacity bitmask length - 1          = 0x%0x (%u)\n",
-                words[WORD_EAX], words[WORD_EAX]);
+         printf("      capacity bitmask length              = 0x%0llx (%llu)\n",
+                (unsigned long long)words[WORD_EAX] + 1,
+                (unsigned long long)words[WORD_EAX] + 1);
          printf("      number of classes of service         = 0x%0x (%u)\n",
                 words[WORD_EDX], words[WORD_EDX]);
       } else {
@@ -8655,13 +8793,27 @@ print_reg (unsigned int        reg,
       }
    } else if (reg == 0xc0000002) {
       if (stash->vendor == VENDOR_VIA) {
-         printf("   VIA C7 Temperature/Voltage Sensors (0xc0000002):\n");
-         print_c0000002_eax(words[WORD_EAX]);
+         printf("   VIA C7 Current Performance Data (0xc0000002):\n");
+         if (BIT_EXTRACT_LE(words[WORD_EAX], 0, 8) != 0) {
+            printf("      core temperature (degrees C)       = %f\n",
+                   (double)words[WORD_EAX] / 256.0);
+         } else {
+            printf("      core temperature (degrees C)       = %d\n",
+                   BIT_EXTRACT_LE(words[WORD_EAX], 8, 32));
+         }
          print_c0000002_ebx(words[WORD_EBX]);
-         /* TODO: figure out how to decode 0xc0000001:ecx & edx */
-         printf("   0x%08x 0x%02x: ebx=0x%08x ecx=0x%08x edx=0x%08x\n",
-                (unsigned int)reg, try,
-                words[WORD_EBX], words[WORD_ECX], words[WORD_EDX]);
+         print_c0000002_ecx(words[WORD_ECX]);
+         print_c0000002_edx(words[WORD_EDX]);
+      } else {
+         print_reg_raw(reg, try, words);
+      }
+   } else if (reg == 0xc0000004) {
+      if (stash->vendor == VENDOR_VIA) {
+         printf("   VIA Temperature (0xc0000004/eax):\n");
+         print_c0000004_eax(words[WORD_EAX]);
+         printf("   VIA MSR 198 Mirror (0xc0000004):\n");
+         print_c0000004_ebx(words[WORD_EBX]);
+         print_c0000004_ecx(words[WORD_ECX]);
       } else {
          print_reg_raw(reg, try, words);
       }
