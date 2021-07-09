@@ -34,8 +34,8 @@
 // The "hook" to find these generally is an X86_FEATURE_* flag in:
 //    arch/x86/include/asm/cpufeatures.h
 // For (synth) and (uarch synth) decoding, it often indicates
-// family/model/stepping value which are documented nowhere else.  These usually
-// can be found in:
+// family/model/stepping values which are documented nowhere else.  These
+// usually can be found in:
 //    arch/x86/include/asm/intel-family.h
 
 // Coreboot* indicates (synth) or (uarch synth) decoding for which I have seen
@@ -378,6 +378,7 @@ typedef struct {
          boolean    g_line;
          boolean    i_8000;
          boolean    i_10000;
+         boolean    cc150;
       };
       struct /* AMD */ {
          boolean    athlon_lv;
@@ -467,7 +468,7 @@ typedef struct {
                     { FALSE, \
                       { FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
                         FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
-                        FALSE, FALSE },                                   \
+                        FALSE, FALSE, FALSE },                           \
                       { FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
                         FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
                         FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, \
@@ -1549,6 +1550,7 @@ decode_brand_string(const char*    brand,
    stash->br.g_line      = strregexp(brand, "Core.* [im][3579]-[0-9]*G");
    stash->br.i_8000      = strregexp(brand, "Core.* [im][3579]-8[0-9][0-9][0-9]");
    stash->br.i_10000     = strregexp(brand, "Core.* i[3579]-10[0-9][0-9][0-9]");
+   stash->br.cc150       = strregexp(brand, "CC150");
 
    stash->br.athlon_lv   = strstr(brand, "Athlon(tm) XP-M (LV)") != NULL;
    stash->br.athlon_xp   = (strstr(brand, "Athlon(tm) XP") != NULL
@@ -1679,6 +1681,7 @@ decode_brand_stash(code_stash_t*  stash)
 #define UP (dP && stash->br.u_line)
 #define YC (dC && stash->br.y_line)
 #define YP (dP && stash->br.y_line)
+#define d1 (is_intel && stash->br.cc150)
 
 /* 
 ** Intel special cases 
@@ -2083,11 +2086,14 @@ decode_uarch_intel(unsigned int  val,
    FM  (    0, 6,  7,14,         *u = "Sunny Cove",                             *f = "Sunny Cove",     *p = "10nm");
    FM  (    0, 6,  8, 5,         *u = "Knights Mill",              *ciu = TRUE,                        *p = "14nm"); // no spec update; only MSR_CPUID_table* so far
    FM  (    0, 6,  8, 6,         *u = "Tremont",                                                       *p = "10nm"); // LX*
-   FM  (    0, 6,  8,10,         *u = "Tremont",                                                       *p = "10nm"); // no spec update; only geekbench.com example
+   FM  (    0, 6,  8,10,         *u = "Tremont",                                                       *p = "10nm"); // no spec update; LX*
    FM  (    0, 6,  8,12,         *u = "Willow Cove",                            *f = "Sunny Cove",     *p = "10nm"); // found only on en.wikichip.org
    FM  (    0, 6,  8,13,         *u = "Willow Cove",                            *f = "Sunny Cove",     *p = "10nm"); // LX*
    FM  (    0, 6,  8,14,         *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm");
+   FM  (    0, 6,  8,15,         *u = "Sapphire Rapids",                        *f = "Sunny Cove",     *p = "10nm"); // LX*
    FM  (    0, 6,  9, 6,         *u = "Tremont",                                                       *p = "10nm"); // LX*
+   FM  (    0, 6,  9, 7,         *u = "Golden Cove",                                                   *p = "10nm"); // LX*
+   FM  (    0, 6,  9,10,         *u = "Golden Cove",                                                   *p = "10nm"); // Coreboot*
    FM  (    0, 6,  9,12,         *u = "Tremont",                                                       *p = "10nm"); // LX*
    FM  (    0, 6,  9,13,         *u = "Sunny Cove",                             *f = "Sunny Cove",     *p = "10nm"); // LX*
    FMS (    0, 6,  9,14,  9,     *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm");
@@ -2098,6 +2104,7 @@ decode_uarch_intel(unsigned int  val,
    FM  (    0, 6,  9,14,         *u = "Kaby Lake / Coffee Lake",                *f = "Skylake",        *p = "14nm");
    FM  (    0, 6, 10, 5,         *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm"); // LX*
    FM  (    0, 6, 10, 6,         *u = "Kaby Lake",                              *f = "Skylake",        *p = "14nm"); // no spec update; only instlatx64 example
+   FM  (    0, 6, 10, 7,         *u = "Rocket Lake",                            *f = "Sunny Cove",     *p = "14nm"); // LX*
    F   (    0, 7,                *u = "Itanium");
    FM  (    0,11,  0, 0,         *u = "Knights Ferry",             *ciu = TRUE, *f = "K1OM",           *p = "45nm"); // found only on en.wikichip.org
    FM  (    0,11,  0, 1,         *u = "Knights Corner",            *ciu = TRUE, *f = "K1OM",           *p = "22nm");
@@ -2201,14 +2208,16 @@ decode_uarch_amd(unsigned int  val,
    FM  ( 6,15,  6, 5,         *u = "Excavator",   *p = "28nm"); // undocumented, but sample from Alexandros Couloumbis
    FM  ( 6,15,  7, 0,         *u = "Excavator",   *p = "28nm");
    FM  ( 7,15,  0, 0,         *u = "Jaguar",      *p = "28nm");
+   FM  ( 7,15,  2, 6,         *u = "Cato",        *p = "28nm"); // only instlatx64 example; engr sample?
    FM  ( 7,15,  3, 0,         *u = "Puma 2014",   *p = "28nm");
    FM  ( 8,15,  0, 0,         *u = "Zen",         *p = "14nm"); // instlatx64 engr sample
    FM  ( 8,15,  0, 1,         *u = "Zen",         *p = "14nm");
    FM  ( 8,15,  0, 8,         *u = "Zen+",        *p = "12nm");
    FM  ( 8,15,  1, 1,         *u = "Zen",         *p = "14nm"); // found only on en.wikichip.org & instlatx64 examples
-   FM  ( 8,15,  1, 8,         *u = "Zen+",        *p = "12nm"); // found only on en.wikichip.org
+   FM  ( 8,15,  1, 8,         *u = "Zen+",        *p = "12nm");
+   FM  ( 8,15,  2, 0,         *u = "Zen",         *p = "14nm");
    FM  ( 8,15,  3, 1,         *u = "Zen 2",       *p = "7nm");  // found only on en.wikichip.org
-   FM  ( 8,15,  6, 0,         *u = "Zen 2",       *p = "7nm");  // undocumented, geekbench.com example
+   FM  ( 8,15,  6, 0,         *u = "Zen 2",       *p = "7nm");
    FM  ( 8,15,  7, 1,         *u = "Zen 2",       *p = "7nm");  // undocumented, but samples from Steven Noonan
    F   (10,15,                *u = "Zen 3",       *p = "7nm");  // undocumented, LX*
    DEFAULT                  ((void)NULL);
@@ -3280,9 +3289,10 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    // MRG* 2018-03-06 mentions stepping 0, but doesn't specify which stepping name it is.
    FM  (    0, 6,  8, 5,         "Intel Xeon Phi (Knights Mill)");
    FM  (    0, 6,  8, 6,         "Intel Atom (Elkhart Lake)");
-   FM  (    0, 6,  8,10,         "Intel Atom"); // no spec update; geekbench.com example
-   // Coreboot* provides stepping.
+   FM  (    0, 6,  8,10,         "Intel Atom (Lakefield)"); // no spec update; LX*
+   // Coreboot* provides steppings.
    FMS (    0, 6,  8,12,  0,     "Intel Core (Tiger Lake-U A0)");
+   FMS (    0, 6,  8,12,  1,     "Intel Core (Tiger Lake-U B0)");
    FM  (    0, 6,  8,12,         "Intel Core (Tiger Lake-U)");
    FM  (    0, 6,  8,13,         "Intel Core (Tiger Lake)"); // LX*
    // Intel docs (334663) omit the stepping numbers for (0,6),(8,14)
@@ -3308,10 +3318,20 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMSQ(    0, 6,  8,14, 12, dC, "Intel Celeron 5000U (Comet Lake-U V1)"); // MRG* 2019-08-31 pinned down stepping
    FMS (    0, 6,  8,14, 12,     "Intel (unknown type) (Whiskey Lake-U V0 / Comet Lake-U V1)");
    FM  (    0, 6,  8,14,         "Intel Core (unknown type) (Kaby Lake / Amber Lake-Y / Whiskey Lake-U / Comet Lake-U)");
+   FM  (    0, 6,  8,15,         "Intel Xeon (unknown type) (Sapphire Rapids)"); // LX*
    // LX*.  Coreboot* provides stepping.
    FMS (    0, 6,  9, 6,  0,     "Intel Atom (Elkhart Lake A0)");
+   FMS (    0, 6,  9, 6,  1,     "Intel Atom (Elkhart Lake B0)");
    FM  (    0, 6,  9, 6,         "Intel Atom (Elkhart Lake)");
-   FM  (    0, 6,  9,12,         "Intel Atom (Jasper Lake)"); // LX*
+   // LX*.  Coreboot* provides stepping.
+   FMS (    0, 6,  9, 7,  0,     "Intel Atom (Alder Lake-S A0)");
+   FM  (    0, 6,  9, 7,         "Intel Atom (Alder Lake-S)");
+   // Coreboot*.  Coreboot* provides stepping.
+   FMS (    0, 6,  9,10,  0,     "Intel Atom (Alder Lake-P A0)");
+   FM  (    0, 6,  9,10,         "Intel Atom (Alder Lake-P)");
+   // LX*.  Coreboot* provides stepping.
+   FMS (    0, 6,  9,12,  0,     "Intel Atom (Jasper Lake A0)");
+   FM  (    0, 6,  9,12,         "Intel Atom (Jasper Lake)");
    FM  (    0, 6,  9,13,         "Intel NNP I-1000 (Spring Hill)"); // LX*
    // Intel docs (334663, 335718, 336466, 338014) omit the stepping numbers for
    // (0,6),(9,14) B0, but (337346) provides some.
@@ -3328,20 +3348,38 @@ decode_synth_intel(unsigned int         val,  /* val_1_eax */
    FMSQ(    0, 6,  9,14, 11, dC, "Intel Celeron G4900 (Coffee Lake B0)"); // no spec update; MRG* 2020-01-27
    FMSQ(    0, 6,  9,14, 11, dP, "Intel Pentium Gold G5000 (Coffee Lake B0)"); // MRG* 2020-01-27 pinned down stepping
    FMSQ(    0, 6,  9,14, 12, dc, "Intel Core i*-9000 S Line (Coffee Lake P0)");
+   FMSQ(    0, 6,  9,14, 13, d1, "Intel CC150 (Coffee Lake R0)"); // no docs; only instlatx64 example
    FMSQ(    0, 6,  9,14, 13, dc, "Intel Core i*-9000 H Line (Coffee Lake R0)");
    FMSQ(    0, 6,  9,14, 13, sX, "Intel Xeon E-2200 (Coffee Lake R0)"); // no docs on stepping; only MRG 2019-11-13
-   FM  (    0, 6,  9,14,         "Intel Core (unknown type) (Kaby Lake / Coffee Lake)");
+   FM  (    0, 6,  9,14,         "Intel (unknown type) (Kaby Lake / Coffee Lake)");
    // LX*.  Coreboot* provides more detail & steppings
-   FMS (    0, 6, 10, 5,  0,     "Intel (unknown model) (Comet Lake-H/S G0)");
-   FMS (    0, 6, 10, 5,  1,     "Intel (unknown model) (Comet Lake-H/S P0)");
-   FMS (    0, 6, 10, 5,  3,     "Intel (unknown model) (Comet Lake-H/S G1)");
-   FMS (    0, 6, 10, 5,  4,     "Intel (unknown model) (Comet Lake-H/S Q0/P1)");
-   FM  (    0, 6, 10, 5,         "Intel (unknown model) (Comet Lake-H/S)");
+   // (615213) mentions the (0,6),(10,5),2 and (0,6),(10,5),5 steppings, but
+   // does not provide their names.
+   // en.wikichip.org provides more details on stepping names.
+   FMSQ(    0, 6, 10, 5,  0, dc, "Intel Core i*-10000 (Comet Lake-H/S G0)");
+   FMS (    0, 6, 10, 5,  0,     "Intel (unknown type) (Comet Lake-H/S G0)");
+   FMSQ(    0, 6, 10, 5,  1, dc, "Intel Core i*-10000 (Comet Lake-H/S P0)");
+   FMS (    0, 6, 10, 5,  1,     "Intel (unknown type) (Comet Lake-H/S P0)");
+   FMSQ(    0, 6, 10, 5,  2, dc, "Intel Core i*-10000 (Comet Lake-H/S R1)");
+   FMS (    0, 6, 10, 5,  2,     "Intel (unknown type) (Comet Lake-H/S R1)");
+   FMSQ(    0, 6, 10, 5,  3, dc, "Intel Core i*-10000 (Comet Lake-H/S G1)");
+   FMS (    0, 6, 10, 5,  3,     "Intel (unknown type) (Comet Lake-H/S G1)");
+   FMSQ(    0, 6, 10, 5,  4, dc, "Intel Core i*-10000 (Comet Lake-H/S P1)");
+   FMS (    0, 6, 10, 5,  4,     "Intel (unknown type) (Comet Lake-H/S P1)");
+   FMSQ(    0, 6, 10, 5,  5, dc, "Intel Core i*-10000 (Comet Lake-H/S Q0)");
+   FMS (    0, 6, 10, 5,  5,     "Intel (unknown type) (Comet Lake-H/S Q0)");
+   FMQ (    0, 6, 10, 5,     dc, "Intel Core i*-10000 (Comet Lake-H/S)");
+   FM  (    0, 6, 10, 5,         "Intel (unknown type) (Comet Lake-H/S)");
+   // (615213) provides steppings.
    // MRG* 2019-11-13 & instlatx64 example
    // Coreboot* provides steppings.
    FMS (    0, 6, 10, 6,  0,     "Intel Core i*-10000 (Comet Lake-U A0)");
-   FMS (    0, 6, 10, 6,  1,     "Intel Core i*-10000 (Comet Lake-U K0/S0)");
-   FM  (    0, 6, 10, 6,         "Intel Core i*-10000 (Comet Lake-U)");
+   FMS (    0, 6, 10, 6,  1,     "Intel Core i*-10000 (Comet Lake-U K0/K1/S0)");
+   FMS (    0, 6, 10, 6,  2,     "Intel Core i*-10000 (Comet Lake-H R1)");
+   FMS (    0, 6, 10, 6,  3,     "Intel Core i*-10000 (Comet Lake-S G1)");
+   FMS (    0, 6, 10, 6,  5,     "Intel Core i*-10000 (Comet Lake-S Q0)");
+   FM  (    0, 6, 10, 6,         "Intel Core i*-10000 (Comet Lake)");
+   FM  (    0, 6, 10, 7,         "Intel (unknown type) (Rocket Lake)");
    FQ  (    0, 6,            sX, "Intel Xeon (unknown model)");
    FQ  (    0, 6,            se, "Intel Xeon (unknown model)");
    FQ  (    0, 6,            MC, "Intel Mobile Celeron (unknown model)");
@@ -4188,20 +4226,23 @@ decode_synth_amd(unsigned int         val,
    FMQ ( 7,15,  0, 0,     Sg, "AMD G-Series (Kabini)");
    FMQ ( 7,15,  0, 0,     sO, "AMD Opteron X1100/X2100 Series (Kyoto)");
    FM  ( 7,15,  0, 0,         "AMD (unknown type) (Kabini/Temash/Kyoto)");
+   FM  ( 7,15,  2, 6,         "AMD (unknown type) (Cato)"); // undocumented; instlatx64 sample; engr sample?
    // sandpile.org mentions (7,15),(0,4) Jaguar-esque "BV" cores
    // (with stepping 1 = A1), but I have no idea of any such code name.
    // The AMD docs (53072) omit the CPUID entirely.  But if this sticks to the
    // recent AMD pattern, these must be (7,15),(3,0).
    FMSQ( 7,15,  3, 0,  1, Sa, "AMD A-Series (Beema ML-A1)");
    FMSQ( 7,15,  3, 0,  1, Se, "AMD E-Series (Beema ML-A1)");
+   FMSQ( 7,15,  3, 0,  1, Sg, "AMD G-Series (Steppe Eagle/Crowned Eagle ML-A1)"); // undocumented; instlatx64 sample
    FMSQ( 7,15,  3, 0,  1, Ta, "AMD A-Series Micro (Mullins ML-A1)");
    FMSQ( 7,15,  3, 0,  1, Te, "AMD E-Series Micro (Mullins ML-A1)");
    FMS ( 7,15,  3, 0,  1,     "AMD (unknown type) (Beema/Mullins ML-A1)");
    FMQ ( 7,15,  3, 0,     Sa, "AMD A-Series (Beema)");
    FMQ ( 7,15,  3, 0,     Se, "AMD E-Series (Beema)");
+   FMQ ( 7,15,  3, 0,     Sg, "AMD E-Series (Steppe Eagle/Crowned Eagle)");
    FMQ ( 7,15,  3, 0,     Ta, "AMD A-Series Micro (Mullins)");
    FMQ ( 7,15,  3, 0,     Te, "AMD E-Series Micro (Mullins)");
-   FM  ( 7,15,  3, 0,         "AMD (unknown type) (Beema/Mullins)");
+   FM  ( 7,15,  3, 0,         "AMD (unknown type) (Beema/Mullins/Steppe Eagle/Crowned Eagle)");
    // sandpile.org mentions (7,15),(6,0) Puma-esque "NL" cores
    // (with stepping 1 = A1), but I have no idea of any such code name.
    F   ( 7,15,                "AMD (unknown model)");
@@ -4231,7 +4272,10 @@ decode_synth_amd(unsigned int         val,
    FMQ ( 8,15,  1, 1,     ER, "AMD Ryzen Embedded (Great Horned Owl/Banded Kestrel)"); // only instlatx64 example
    FMQ ( 8,15,  1, 1,     AR, "AMD Ryzen (Raven Ridge)"); // found only on en.wikichip.org & instlatx64 examples
    FM  ( 8,15,  1, 1,         "AMD Ryzen (unknown type) (Raven Ridge/Snowy Owl/Great Horned Owl/Banded Kestrel)"); // found only on en.wikichip.org & instlatx64 examples
-   FM  ( 8,15,  1, 8,         "AMD Ryzen (Picasso)"); // found only on en.wikichip.org
+   FMS ( 8,15,  1, 8,  1,     "AMD Ryzen (Picasso A1)");
+   FM  ( 8,15,  1, 8,         "AMD Ryzen (Picasso)");
+   FMS ( 8,15,  2, 0,  1,     "AMD Ryzen (Dali A1)");
+   FM  ( 8,15,  2, 0,         "AMD Ryzen (Dali)");
    FMSQ( 8,15,  3, 1,  0, dR, "AMD Ryzen (Castle Peak B0)");
    FMQ ( 8,15,  3, 1,     dR, "AMD Ryzen (Castle Peak)");
    FMSQ( 8,15,  3, 1,  0, sE, "AMD EPYC (Rome B0)");
@@ -4239,7 +4283,8 @@ decode_synth_amd(unsigned int         val,
    FMS ( 8,15,  3, 1,  0,     "AMD Ryzen (Castle Peak B0) / EPYC (Rome B0)");
    FM  ( 8,15,  3, 1,         "AMD Ryzen (Castle Peak) / EPYC (Rome)");
    FM  ( 8,15,  5, 0,         "AMD DG02SRTBP4MFA (Fenghuang 15FF)"); // internal model, only instlatx64 example
-   FM  ( 8,15,  6, 0,         "AMD Ryzen (Renoir)"); // undocumented, geekbench.com example (with stepping 1)
+   FMS ( 8,15,  6, 0,  1,     "AMD Ryzen (Renoir A1)");
+   FM  ( 8,15,  6, 0,         "AMD Ryzen (Renoir)");
    FMS ( 8,15,  7, 1,  0,     "AMD Ryzen (Matisse B0)"); // undocumented, but samples from Steven Noonan
    FM  ( 8,15,  7, 1,         "AMD Ryzen (Matisse)"); // undocumented, but samples from Steven Noonan
    F   ( 8,15,                "AMD (unknown model)");
@@ -4345,6 +4390,7 @@ decode_synth_via(unsigned int         val,
    FM  (0, 6,  0,15,         "VIA Nano / Eden (unknown type) (Isaiah)");
    F   (0, 6,                "VIA C3 / C3-M / C7 / C7-M / Eden / Eden ESP 7000/8000/10000 / Nano (unknown model)");
    FM  (0, 7,  0,11,         "Zhaoxin KaiXian KX-5000 / Kaisheng KH-20000 (WuDaoKou)"); // geekbench.com example
+   FMQ (0, 7,  3,11,     vZ, "Zhaoxin KaiXian KX-6000 / Kaisheng KH-30000 (LuJiaZui)"); // instlatx64 example with CentaurHauls vendor!
    DEFAULT                 ("unknown");
 
    return result;
@@ -5166,7 +5212,7 @@ print_1_ebx(unsigned int  value)
 {
    static named_item  names[]
       = { { "process local APIC physical ID"          , 24, 31, NIL_IMAGES },
-          { "cpu count"                               , 16, 23, NIL_IMAGES },
+          { "maximum IDs for CPUs in pkg"             , 16, 23, NIL_IMAGES },
           { "CLFLUSH line size"                       ,  8, 15, NIL_IMAGES },
           { "brand index"                             ,  0,  7, NIL_IMAGES },
         };
@@ -5448,8 +5494,8 @@ print_4_eax(unsigned int  value)
           { "cache level"                             ,  5,  7, NIL_IMAGES },
           { "self-initializing cache level"           ,  8,  8, bools },
           { "fully associative cache"                 ,  9,  9, bools },
-          { "extra threads sharing this cache"        , 14, 25, NIL_IMAGES },
-          { "extra processor cores on this die"       , 26, 31, NIL_IMAGES },
+          { "maximum IDs for CPUs sharing cache"      , 14, 25, NIL_IMAGES },
+          { "maximum IDs for cores in pkg"            , 26, 31, NIL_IMAGES },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5592,8 +5638,9 @@ print_6_eax(unsigned int  value)
           { "HWP PECI override"                       , 16, 16, bools },
           { "flexible HWP"                            , 17, 17, bools },
           { "IA32_HWP_REQUEST MSR fast access mode"   , 18, 18, bools },
-          { "HW_FEEDBACK"                             , 19, 19, bools },
+          { "HW_FEEDBACK MSRs supported"              , 19, 19, bools },
           { "ignoring idle logical processor HWP req" , 20, 20, bools },
+          { "enhanced hardware feedback interface"    , 23, 23, bools },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5618,6 +5665,7 @@ print_6_ecx(unsigned int  value)
       = { { "hardware coordination feedback"          ,  0,  0, bools },
           { "ACNT2 available"                         ,  1,  1, bools },
           { "performance-energy bias capability"      ,  3,  3, bools },
+          { "number of enh hardware feedback classes" ,  8, 11, NIL_IMAGES },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5630,7 +5678,7 @@ print_6_edx(unsigned int  value)
    static named_item  names[]
       = { { "performance capability reporting"        ,  0,  0, bools },
           { "energy efficiency capability reporting"  ,  1,  1, bools },
-          { "size of feedback struct (4KB pages)"     ,  8, 11, NIL_IMAGES },
+          { "size of feedback struct (4KB pages)"     ,  8, 11, MINUS1_IMAGES },
           { "index of CPU's row in feedback struct"   , 16, 31, NIL_IMAGES },
         };
 
@@ -5702,11 +5750,13 @@ print_7_0_ecx(unsigned int  value)
           { "5-level paging"                          , 16, 16, bools },
           { "BNDLDX/BNDSTX MAWAU value in 64-bit mode", 17, 21, NIL_IMAGES },
           { "RDPID: read processor D supported"       , 22, 22, bools },
+          { "KL: key locker"                          , 23, 23, bools },
           { "CLDEMOTE supports cache line demote"     , 25, 25, bools },
           { "MOVDIRI instruction"                     , 27, 27, bools },
           { "MOVDIR64B instruction"                   , 28, 28, bools },
           { "ENQCMD instruction"                      , 29, 29, bools },
           { "SGX_LC: SGX launch config supported"     , 30, 30, bools },
+          { "PKS: supervisor protection keys"         , 31, 31, bools },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5720,11 +5770,20 @@ print_7_0_edx(unsigned int  value)
       = { { "AVX512_4VNNIW: neural network instrs"    ,  2,  2, bools },
           { "AVX512_4FMAPS: multiply acc single prec" ,  3,  3, bools },
           { "fast short REP MOV"                      ,  4,  4, bools },
+          { "UINTR: user interrupts"                  ,  5,  5, bools },
           { "AVX512_VP2INTERSECT: intersect mask regs",  8,  8, bools },
-          { "VERW md-clear microcode support"         , 10, 10, bools }, // Xen*/Qemu*
+          { "SRBDS mitigation MSR available"          ,  9,  9, bools }, // LX*
+          { "VERW MD_CLEAR microcode support"         , 10, 10, bools },
+          { "SERIALIZE instruction"                   , 14, 14, bools },
           { "hybrid part"                             , 15, 15, bools },
+          { "TSXLDTRK: TSX suspend load addr tracking", 16, 16, bools },
           { "PCONFIG instruction"                     , 18, 18, bools },
+          { "LBR: architectural last branch records"  , 19, 19, bools },
           { "CET_IBT: CET indirect branch tracking"   , 20, 20, bools },
+          { "AMX-BF16: tile bfloat16 support"         , 22, 22, bools },
+          { "AVX512_FP16: fp16 support"               , 23, 23, bools },
+          { "AMX-TILE: tile architecture support"     , 24, 24, bools },
+          { "AMX-INT8: tile 8-bit integer support"    , 25, 25, bools },
           { "IBRS/IBPB: indirect branch restrictions" , 26, 26, bools },
           { "STIBP: 1 thr indirect branch predictor"  , 27, 27, bools },
           { "L1D_FLUSH: IA32_FLUSH_CMD MSR"           , 28, 28, bools },
@@ -5740,7 +5799,12 @@ static void
 print_7_1_eax(unsigned int  value)
 {
    static named_item  names[]
-      = { { "AVX512_BF16: bfloat16 instructions"      ,  5,  5, bools },
+      = { { "AVX-VNNI: AVX VNNI neural network instrs",  4,  4, bools },
+          { "AVX512_BF16: bfloat16 instructions"      ,  5,  5, bools },
+          { "zero-length MOVSB"                       , 10, 10, bools },
+          { "fast short STOSB"                        , 11, 11, bools },
+          { "fast short CMPSB, SCASB"                 , 12, 12, bools },
+          { "HRESET: history reset support"           , 22, 22, bools },
       };
    print_names(value, names, LENGTH(names),
                /* max_len => */ 40);
@@ -5756,9 +5820,8 @@ print_a_eax(unsigned int  value)
           { "length of EBX bit vector"                , 24, 31, NIL_IMAGES },
         };
 
-   printf("   Architecture Performance Monitoring Features (0xa/eax):\n");
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 40);
 }
 
 static void
@@ -5774,9 +5837,19 @@ print_a_ebx(unsigned int  value)
           { "branch mispred retired event not avail"  ,  6,  6, bools },
         };
 
-   printf("   Architecture Performance Monitoring Features (0xa/ebx):\n");
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 40);
+}
+
+static void
+print_a_ecx(unsigned int  value)
+{
+   unsigned int  bit;
+   for (bit = 0; bit < sizeof(value)*8; bit++) {
+      unsigned int  field = BIT_EXTRACT_LE(value, bit, bit+1);
+      printf("      fixed counter %2u supported               = %s\n",
+             bit, bools[field]);
+   }
 }
 
 static void
@@ -5788,9 +5861,8 @@ print_a_edx(unsigned int  value)
           { "anythread deprecation"                   , 15, 15, bools },
         };
 
-   printf("   Architecture Performance Monitoring Features (0xa/edx):\n");
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 40);
 }
 
 static void
@@ -5845,7 +5917,6 @@ print_d_0_eax(unsigned int  value)
    ** which of the bits are actually supported by the hardware, and is described
    ** better in 13.2: Enumeration of CPU Support for XSAVE Instructions and
    ** XSAVE-Supported Features.
-         // This is invariant across subleaves, so print it only once
    ** 
    ** These align with the supported features[] in print_d_n() for values > 1.
    */
@@ -5863,6 +5934,11 @@ print_d_0_eax(unsigned int  value)
           { "   XCR0 supported: CET_U state"          , 11, 11, bools },
           { "   XCR0 supported: CET_S state"          , 12, 12, bools },
           { "   IA32_XSS supported: HDC state"        , 13, 13, bools },
+          { "   IA32_XSS supported: UINTR state"      , 14, 14, bools },
+          { "   LBR supported"                        , 15, 15, bools },
+          { "   IA32_XSS supported: HWP state"        , 16, 16, bools },
+          { "   XTILECFG supported"                   , 17, 17, bools },
+          { "   XTILEDATA supported"                  , 18, 18, bools },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5877,6 +5953,7 @@ print_d_1_eax(unsigned int  value)
           { "XSAVEC instruction"                      ,  1,  1, bools },
           { "XGETBV instruction"                      ,  2,  2, bools },
           { "XSAVES/XRSTORS instructions"             ,  3,  3, bools },
+          { "XFD: extended feature disable supported" ,  4,  4, bools },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5892,6 +5969,7 @@ print_d_n_ecx(unsigned int  value)
    static named_item  names[]
       = { { "supported in IA32_XSS or XCR0"           ,  0,  0, which },
           { "64-byte alignment in compacted XSAVE"    ,  1,  1, bools },
+          { "XFD faulting supported"                  ,  2,  2, bools },
         };
 
    print_names(value, names, LENGTH(names),
@@ -5925,11 +6003,11 @@ print_d_n(const unsigned int  words[WORD_NUM],
                                     /* 11 => */ "CET_U state",
                                     /* 12 => */ "CET_S state",
                                     /* 13 => */ "HDC",
-                                    /* 14 => */ "unknown",
-                                    /* 15 => */ "unknown",
-                                    /* 16 => */ "unknown",
-                                    /* 17 => */ "unknown",
-                                    /* 18 => */ "unknown",
+                                    /* 14 => */ "UINTR",
+                                    /* 15 => */ "LBR",
+                                    /* 16 => */ "HWP state",
+                                    /* 17 => */ "XTILECFG",
+                                    /* 18 => */ "XTILEDATA",
                                     /* 19 => */ "unknown",
                                     /* 20 => */ "unknown",
                                     /* 21 => */ "unknown",
@@ -6005,6 +6083,17 @@ print_f_0_edx(unsigned int  value)
 }
 
 static void
+print_f_1_eax(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "IA32_QM_CTR bit 61 is overflow"          ,  8,  8, bools },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 43);
+}
+
+static void
 print_f_1_edx(unsigned int  value)
 {
    static named_item  names[]
@@ -6014,7 +6103,7 @@ print_f_1_edx(unsigned int  value)
         };
 
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 43);
 }
 
 static void
@@ -6079,7 +6168,8 @@ static void
 print_10_3_ecx(unsigned int  value)
 {
    static named_item  names[]
-      = { { "delay values are linear"                 ,  2,  2, bools },
+      = { { "per-thread MBA control"                  ,  0,  0, bools },
+          { "delay values are linear"                 ,  2,  2, bools },
         };
 
    print_names(value, names, LENGTH(names),
@@ -6156,7 +6246,7 @@ print_14_0_ebx(unsigned int  value)
         };
 
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 38);
 }
 
 static void
@@ -6171,7 +6261,7 @@ print_14_0_ecx(unsigned int  value)
         };
 
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 38);
 }
 
 static void
@@ -6183,7 +6273,7 @@ print_14_1_eax(unsigned int  value)
         };
 
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 38);
 }
 
 static void
@@ -6195,7 +6285,7 @@ print_14_1_ebx(unsigned int  value)
         };
 
    print_names(value, names, LENGTH(names),
-               /* max_len => */ 0);
+               /* max_len => */ 38);
 }
 
 static void
@@ -6274,10 +6364,12 @@ print_18_n_ebx(unsigned int  value)
 static void
 print_18_n_edx(unsigned int  value)
 {
-   static ccstring tlbs[1<<5] = { /* 00000b => */ "invalid (0)",    
-                                  /* 00001b => */ "data TLB",       
+   static ccstring tlbs[1<<5] = { /* 00000b => */ "invalid (0)",
+                                  /* 00001b => */ "data TLB",
                                   /* 00010b => */ "instruction TLB",
-                                  /* 00011b => */ "unified TLB", };
+                                  /* 00011b => */ "unified TLB",
+                                  /* 00100b => */ "load-only TLB",
+                                  /* 00101b => */ "store-only TLB" };
 
    static named_item  names[]
       = { { "translation cache type"                  ,  0,  4, tlbs },
@@ -6288,6 +6380,44 @@ print_18_n_edx(unsigned int  value)
 
    print_names(value, names, LENGTH(names),
                /* max_len => */ 0);
+}
+
+static void
+print_19_eax(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "CPL0-only restriction supported"         ,  0,  0, bools },
+          { "no-encrypt restriction supported"        ,  1,  1, bools },
+          { "no-decrypt restriction supported"        ,  2,  2, bools },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 32);
+}
+
+static void
+print_19_ebx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "AESKLE: AES instructions"                ,  0,  0, bools },
+          { "AES wide instructions"                   ,  2,  2, bools },
+          { "MSRs & IWKEY backups"                    ,  4,  4, bools },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 32);
+}
+
+static void
+print_19_ecx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "LOADIWKEY NoBackup parameter"            ,  0,  0, bools },
+          { "IWKEY randomization supported"           ,  1,  1, bools },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 32);
 }
 
 static void
@@ -6336,6 +6466,116 @@ print_1b_n_eax(unsigned int  value)
 }
 
 static void
+print_1c_eax(unsigned int  value)
+{
+   static ccstring ipvs[1<<1] = { /* 0 => */ "EIP (0)",    
+                                  /* 1 => */ "LIP (1)" };
+
+   static named_item  names[]
+      = { { "IA32_LBR_DEPTH.DEPTH  8 supported"       ,  0,  0, bools },
+          { "IA32_LBR_DEPTH.DEPTH 16 supported"       ,  1,  1, bools },
+          { "IA32_LBR_DEPTH.DEPTH 24 supported"       ,  2,  2, bools },
+          { "IA32_LBR_DEPTH.DEPTH 32 supported"       ,  3,  3, bools },
+          { "IA32_LBR_DEPTH.DEPTH 40 supported"       ,  4,  4, bools },
+          { "IA32_LBR_DEPTH.DEPTH 48 supported"       ,  5,  5, bools },
+          { "IA32_LBR_DEPTH.DEPTH 56 supported"       ,  6,  6, bools },
+          { "IA32_LBR_DEPTH.DEPTH 64 supported"       ,  7,  7, bools },
+          { "deep C-state reset supported"            , 30, 30, bools },
+          { "LBR IP values contain"                   , 31, 31, ipvs },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 33);
+}
+
+static void
+print_1c_ebx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "CPL filtering supported"                 ,  0,  0, bools },
+          { "branch filtering supported"              ,  1,  1, bools },
+          { "call-stack mode supported"               ,  2,  2, bools },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 33);
+}
+
+static void
+print_1c_ecx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "mispredict bit supported"                ,  0,  0, bools },
+          { "timed LBRs supported"                    ,  1,  1, bools },
+          { "branch type field supported"             ,  2,  2, bools },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 33);
+}
+
+static void
+print_1d_n_eax(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "total_tile_bytes"                        ,  0, 15, NIL_IMAGES },
+          { "bytes_per_tile"                          , 16, 31, NIL_IMAGES },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 16);
+}
+
+static void
+print_1d_n_ebx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "bytes_per_row"                           ,  0, 15, NIL_IMAGES },
+          { "max_names"                               , 16, 31, NIL_IMAGES },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 16);
+}
+
+static void
+print_1d_n_ecx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "max_rows"                                ,  0, 15, NIL_IMAGES },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 16);
+}
+
+static void
+print_1e_ebx(unsigned int  value)
+{
+   static named_item  names[]
+      = { { "tmul_maxk"                               ,  0,  7, NIL_IMAGES },
+          { "tmul_maxn"                               ,  8, 23, NIL_IMAGES },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 0);
+}
+
+static void
+print_20_ebx(unsigned int  value)
+{
+   /*
+   ** The meanings of the bits correlate with the IA32_HRESET_ENABLE MSR bits.
+   */
+   static named_item  names[]
+      = { { "HRESET supported: EHFI history"          ,  0,  0, bools },
+        };
+
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 0);
+}
+
+static void
 print_20000001_edx(unsigned int  value)
 {
    // I found a vague reference to this leaf in Intel Xeon Phi Coprocessor
@@ -6347,7 +6587,7 @@ print_20000001_edx(unsigned int  value)
       = { { "k1om"                                    ,  0,  0, bools },
         };
 
-   printf("   hypervisor features (0x40000001/eax):\n");
+   printf("   Xeon Phi graphics function features (0x20000001/edx):\n");
    print_names(value, names, LENGTH(names),
                /* max_len => */ 0);
 }
@@ -6369,6 +6609,7 @@ print_40000001_eax_kvm(unsigned int  value)
           { "guest send IPI optimization enabled"     , 11, 11, bools },
           { "host HLT poll disable at MSR 0x4b564d05" , 12, 12, bools },
           { "guest sched yield optimization enabled"  , 13, 13, bools },
+          { "guest uses intrs for page ready APF evs" , 14, 14, bools },
           { "stable: no guest per-cpu warps expected" , 24, 24, bools },
         };
 
@@ -7180,7 +7421,8 @@ print_80000001_ebx_amd(unsigned int  value,
                                                 NULL,
                                                 "AM4 (2)" };
             use_pkg_type = pkg_type;
-         } else if (__M(val_1_eax) == _XM(1) + _M(8)) {
+         } else if (__M(val_1_eax) == _XM(1) + _M(8)
+                    || __M(val_1_eax) == _XM(2) + _M(0)) {
             static ccstring  pkg_type[1<<4] = { "FP5 (0)",
                                                 NULL,
                                                 "AM4 (2)" };
@@ -7454,7 +7696,7 @@ print_80000008_ebx(unsigned int  value)
           { "WBNOINVD instruction"                    ,  9,  9, bools },
           { "IBPB: indirect branch prediction barrier", 12, 12, bools },
           { "IBRS: indirect branch restr speculation" , 14, 14, bools },
-          { "STIBP: 1 thr indirect branch predictor"  , 15, 15, bools },
+          { "STIBP: 1 thr indirect branch predictor"  , 15, 15, bools }, // Qemu*
           { "STIBP always on preferred mode"          , 17, 17, bools }, // LX*
           { "ppin processor id number supported"      , 23, 23, bools }, // Xen*
           { "SSBD: speculative store bypass disable"  , 24, 24, bools },
@@ -7484,7 +7726,7 @@ static void
 print_80000008_edx(unsigned int  value)
 {
    static named_item  names[]
-      = { { "RDPRU instruction max input support"     , 16, 23, NIL_IMAGES }, // SKC*
+      = { { "RDPRU instruction max input support"     , 16, 23, NIL_IMAGES },
         };
  
    printf("   Feature Extended Size (0x80000008/edx):\n");
@@ -7524,6 +7766,7 @@ print_8000000a_edx(unsigned int  value)
           { "virtualized global interrupt flag (GIF)" , 16, 16, bools },
           { "GMET: guest mode execute trap"           , 17, 17, bools },
           { "guest Spec_ctl support"                  , 20, 20, bools },
+          { "INVLPGB/TLBSYNC hyperv interc enable"    , 24, 24, bools },
         };
 
    printf("   SVM Secure Virtual Machine (0x8000000a/edx):\n");
@@ -7797,6 +8040,14 @@ print_8000001f_eax(unsigned int  value)
           { "SEV: secure encrypted virtualize support",  1,  1, bools },
           { "VM page flush MSR support"               ,  2,  2, bools },
           { "SEV-ES: SEV encrypted state support"     ,  3,  3, bools },
+          { "SEV-SNP: SEV secure nested paging"       ,  4,  4, bools },
+          { "VMPL: VM permission levels"              ,  5,  5, bools },
+          { "hardware cache coher across enc domains" , 10, 10, bools },
+          { "SEV guest exec only from 64-bit host"    , 11, 11, bools },
+          { "restricted injection"                    , 12, 12, bools },
+          { "alternate injection"                     , 13, 13, bools },
+          { "full debug state swap for SEV-ES guests" , 14, 14, bools },
+          { "disallowing IBS use by host"             , 15, 15, bools },
         };
 
    print_names(value, names, LENGTH(names),
@@ -7809,6 +8060,7 @@ print_8000001f_ebx(unsigned int  value)
    static named_item  names[]
       = { { "encryption bit position in PTE"          ,  0,  5, NIL_IMAGES },
           { "physical address space width reduction"  ,  6, 11, NIL_IMAGES },
+          { "number of VM permission levels"          , 12, 15, NIL_IMAGES },
         };
    print_names(value, names, LENGTH(names),
                /* max_len => */ 40);
@@ -8353,8 +8605,10 @@ print_reg (unsigned int        reg,
       printf("   Direct Cache Access Parameters (9):\n");
       printf("      PLATFORM_DCA_CAP MSR bits = %u\n", words[WORD_EAX]);
    } else if (reg == 0xa) {
+      printf("   Architecture Performance Monitoring Features (0xa):\n");
       print_a_eax(words[WORD_EAX]);
       print_a_ebx(words[WORD_EBX]);
+      print_a_ecx(words[WORD_ECX]);
       print_a_edx(words[WORD_EDX]);
    } else if (reg == 0xb) {
       if (try == 0) {
@@ -8411,6 +8665,9 @@ print_reg (unsigned int        reg,
                 words[WORD_EBX]);
          printf("      Maximum range of RMID                       = %u\n",
                 words[WORD_ECX]);
+         printf("      Counter width                               = %u\n",
+                24 + BIT_EXTRACT_LE(words[WORD_EAX], 0, 8));
+         print_f_1_eax(words[WORD_EAX]);
          print_f_1_edx(words[WORD_EDX]);
       } else {
          print_reg_raw(reg, try, words);
@@ -8510,8 +8767,13 @@ print_reg (unsigned int        reg,
       printf("      number of sets = 0x%08x (%u)\n",
              words[WORD_ECX], words[WORD_ECX]);
       print_18_n_edx(words[WORD_EDX]);
+   } else if (reg == 0x19) {
+      printf("   Key Locker information (0x19):\n");
+      print_19_eax(words[WORD_EAX]);
+      print_19_ebx(words[WORD_EBX]);
+      print_19_ecx(words[WORD_ECX]);
    } else if (reg == 0x1a) {
-      printf("   Hybrid Information (0x1a/0)\n");
+      printf("   Hybrid Information (0x1a/0):\n");
       print_1a_0_eax(words[WORD_EAX]);
    } else if (reg == 0x1b) {
       printf("   PCONFIG information (0x1b/n):\n");
@@ -8522,6 +8784,23 @@ print_reg (unsigned int        reg,
              3 * try + 2, words[WORD_ECX], words[WORD_ECX]);
       printf("      identifier of target %d = 0x%08x (%u)\n",
              3 * try + 3, words[WORD_EDX], words[WORD_EDX]);
+   } else if (reg == 0x1c) {
+      printf("   Architectural LBR Capabilities (0x1c/0):\n");
+      print_1c_eax(words[WORD_EAX]);
+      print_1c_ebx(words[WORD_EBX]);
+      print_1c_ecx(words[WORD_ECX]);
+   } else if (reg == 0x1d) {
+      if (try == 0) {
+         printf("      max_palette = %u\n", words[WORD_EAX]);
+      } else {
+         printf("      --- palette %d ---\n", try);
+         print_1d_n_eax(words[WORD_EAX]);
+         print_1d_n_ebx(words[WORD_EBX]);
+         print_1d_n_ecx(words[WORD_ECX]);
+      }
+   } else if (reg == 0x1e) {
+      printf("   TMUL Information (0x1e/0):\n");
+      print_1e_ebx(words[WORD_EBX]);
    } else if (reg == 0x1f) {
       if (try == 0) {
          // This is invariant across subleaves, so print it only once
@@ -8532,6 +8811,12 @@ print_reg (unsigned int        reg,
       print_b_1f_ecx(words[WORD_ECX]);
       print_b_1f_eax(words[WORD_EAX]);
       print_b_1f_ebx(words[WORD_EBX]);
+   } else if (reg == 0x20) {
+      if (try == 0) {
+         print_20_ebx(words[WORD_EBX]);
+      } else {
+         print_reg_raw(reg, try, words);
+      }
    } else if (reg == 0x20000000) {
       // max already set to words[WORD_EAX]
    } else if (reg == 0x20000001) {
@@ -8971,6 +9256,7 @@ static int real_get (int           cpuid_fd,
                      boolean       quiet)
 {
    if (cpuid_fd == USE_INSTRUCTION) {
+      bzero(words, sizeof(unsigned int)*WORD_NUM);
 #ifdef USE_CPUID_COUNT
       __cpuid_count(reg, ecx,
                     words[WORD_EAX],
@@ -9063,8 +9349,12 @@ print_header (unsigned int  reg,
          printf("   extended feature flags (7):\n");
       } else if (reg == 0xb && try == 0) {
          printf("   x2APIC features / processor topology (0xb):\n");
+      } else if (reg == 0x1d && try == 0) {
+         printf("   Tile Information (0x1d/0):\n");
       } else if (reg == 0x1f && try == 0) {
          printf("   V2 extended topology (0x1f):\n");
+      } else if (reg == 0x20 && try == 0) {
+         printf("   Processor History Reset information (0x20):\n");
       } else if (reg == 0x40000003 && try == 0) {
          printf("   hypervisor time features (0x40000003/00):\n");
       } else if (reg == 0x40000003 && try == 1) {
@@ -9284,6 +9574,19 @@ do_real(boolean  one_cpu,
                if (try > max_tries) break;
                real_get(cpuid_fd, reg, words, try, FALSE);
             }
+         } else if (reg == 0x1d) {
+            unsigned int  try = 0;
+            unsigned int  max_tries;
+            for (;;) {
+               print_header(reg, try, raw);
+               print_reg(reg, words, raw, try, &stash);
+               if (try == 0) {
+                  max_tries = words[WORD_EAX];
+               }
+               try++;
+               if (try > max_tries) break;
+               real_get(cpuid_fd, reg, words, try, FALSE);
+            }
          } else if (reg == 0x1f) {
             print_header(reg, 0, raw);
             print_reg(reg, words, raw, 0, &stash);
@@ -9292,6 +9595,19 @@ do_real(boolean  one_cpu,
                real_get(cpuid_fd, reg, words, try, FALSE);
                print_reg(reg, words, raw, try, &stash);
                if (BIT_EXTRACT_LE(words[WORD_ECX], 8, 16) == 0) break;
+            }
+         } else if (reg == 0x20) {
+            unsigned int  try = 0;
+            unsigned int  max_tries;
+            for (;;) {
+               print_header(reg, try, raw);
+               print_reg(reg, words, raw, try, &stash);
+               if (try == 0) {
+                  max_tries = words[WORD_EAX];
+               }
+               try++;
+               if (try > max_tries) break;
+               real_get(cpuid_fd, reg, words, try, FALSE);
             }
          } else {
             print_reg(reg, words, raw, 0, &stash);
@@ -9348,6 +9664,15 @@ do_real(boolean  one_cpu,
 
          if (reg == 0x20000000) {
             max = words[WORD_EAX];
+            if (max > 0x20000100) {
+               // Pentium 4 (and probably many early CPUs) don't support this
+               // leaf correctly and return garbage (which appears to be a
+               // replica of the values for the last valid leaf in the
+               // 0x0xxxxxxx range).  As a sanity check to avoid an absurdly
+               // long dump, if the value obviously is out-of-range, just
+               // disable all further 0x2xxxxxxx leaves.
+               max = 0x20000000;
+            }
          }
 
          print_reg(reg, words, raw, 0, &stash);

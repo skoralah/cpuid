@@ -1,3 +1,118 @@
+Tue Oct  6 2020 Todd Allen <todd.allen@etallen.com>
+	* Made new release.
+
+Tue Oct  6 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added 6/eax enhanced hardware feedback interface.
+	* cpuid.c: Added 6/ecx number of enh hardware feedback classes.
+	* cpuid.c: Added 7/0/ecx KL: key locker.
+	* cpuid.c: Added 7/0/edx UINTR: user interrupts.
+	* cpuid.c: Added 7/0/edx AVX512_FP16: fp16 support.
+	* cpuid.c: Added 7/1/eax AVX-VNNI: AVX VNNI neural network instrs.
+	* cpuid.c: Added 7/1/eax zero-length MOVSB.
+	* cpuid.c: Added 7/1/eax fast short STOSB.
+	* cpuid.c: Added 7/1/eax fast short CMPSB, SCASB.
+	* cpuid.c: Added 7/1/eax HRESET: history reset support.
+	* cpuid.c: Added 0xa/ecx fixed counter support enumeration.
+	* cpuid.c: Added 0xd/0/eax IA32_XSS UINTR state.
+	* cpuid.c: Added 0xd/n UINTR feature.
+	* cpuid.c: Added 0x19 key locker features.
+	* cpuid.c: Added 0x20 HRESET features.
+
+Mon Oct  5 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added (7,5),(2,6) AMD Cato (synth) decoding based on
+	  instlatx64 example (possibly an engr sample).
+
+Sun Oct  4 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Corrected 6/edx size field to use minus-one notation.
+	* cpuid.c: Added 7/0/edx AMX flags.
+	* cpuid.c: Added 0xd XTILECFG & XTILEDATA features.
+	* cpuid.c: Added 0xd/1/eax XFD: extended feature disable supported flag.
+	* cpuid.c: Added 0xd/n/ecx XFD: faulting supported flag.
+	* cpuid.c: Added 0x18/0/edx: load-only TLB & store-only TLB encodings.
+	* cpuid.c: Added 0x1d leaf (Tile info) decoding.
+	* cpuid.c: Added 0x1e leaf (TMUL) decoding.
+	* cpuid.c: Added 0x1c leaf (architectural LBR) decoding.
+	* cpuid.c: Added 0xd LBR features.
+
+Sun Oct  4 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added (synth) steppings for Comet Lake (0,6),(10,6) CPUs.
+	  For the first time in a long time, Intel actually provided this in
+	  the revision guide (615213)!
+	* cpuid.c: Corrected (synth) decoding for AMD (8,15),(2,0) Dali CPUs.
+	* cpuid.c: Added (synth) decoding for AMD Dali A1 stepping.
+	* cpuid.c: Added (synth) decoding for AMD Picasso A1 stepping.
+	* cpuid.c: Added (synth) decoding for AMD Renoir A1 stepping.
+
+Sat Oct  3 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added 7/0/ecx PKS flag.
+	* cpuid.c: Added 7/0/edx SRBDS flag, from Linux kernel.
+	* cpuid.c: Added 7/0/edx LBR flag.
+	* cpuid.c: Added 0xd/0/eax IA322_XSS HWP state flag.
+	* cpuid.c: Added synth decoding for Rocket Lake.
+	* cpuid.c: Added synth decoding for Elkhart Lake B0.
+	* cpuid.c: Added synth decoding for Alder Lake [Golden Cove].
+	* cpuid.c: Clarified synth decoding for (0,6),(8,10) Lakefield.
+	* cpuid.c: Added KVM interrupt-based page-ready APF event flag.
+
+Sat Aug  8 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Corrected 0x20000001/edx header.
+	* cpuid.c: Detect bogus 0x20000000 leaf values and cap the maximum
+	  valid register for the 0x2xxxxxxx range to avoid absurdly long dumps
+	  on old CPUs.
+
+Mon Aug  3 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added bzero before cpuid instruction, in case the cpuid
+	  instruction quietly fails.  This mostly is paranoia, but I don't see
+	  how this ever could cause harm.
+
+Mon Jun  8 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added Tiger Lake-U B0 stepping, from coreboot.
+	* cpuid.c: Added AMD (8,15),(2,0) Picasso model synth & uarch decoding.
+
+Sun May 24 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added Zhaoxin KX-6000 decoding that still claims the vendor
+	  CentaurHauls.  Later Zhaoxin CPUs were supposed to use their own
+	  vendor, but instlat64x showed an example that still used the old one.
+
+Sat May 16 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added better (synth) decoding for Intel Comet Lake-H/S
+	  Core i*-10000 CPUs, based on instlatx64 example and listings in
+	  ark.intel.com.
+
+Tue Apr 28 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added 0x8000000a/edx INVLPGB/TLBSYNC hypervisor intercept
+	  enable flag.
+
+Mon Apr 27 2020 Todd Allen <todd.allen@etallen.com>
+	* Made new release.
+
+Wed Apr 22 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added synth decoding for AMD Steppe Eagle/Crowned Eagle
+	  (Puma 2014 G-Series), based on instlatx64 sample.
+
+Thu Apr 16 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added 7/0/edx SERIALIZE & TSXLDTRK bit descriptions.
+	* cpuid.c: Added 0xf/1/eax Counter width & overflow flag.
+	* cpuid.c: Added 0x10/3/ecx per-thread MBA controls flag.
+	* cpuid.c: Added 0x8000001f fields.
+	* cpuid.man: Added AMD 24594 & 40332 docs.
+
+Tue Mar  3 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Corrected field lengths in 14/0 and 14/1 subleafs so that
+	  columns line up.
+
+Thu Feb 27 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added CC150 (Coffee Lake R0) synth decoding, based on
+	  instlatx64 example.
+
+Wed Feb 26 2020 Todd Allen <todd.allen@etallen.com>
+	* cpuid.c: Added Jasper Lake A0 stepping (from Coreboot*).
+	* cpuid.c: Updated 1/ebx "cpu count" to modern terminology: "maximum
+	  addressible IDs for CPUs in pkg" to avoid user confusion.  It was a
+	  reliable count of the number of CPUs for only a split second some time
+	  around 2002.  Maybe.
+	* cpuid.c: Updated 4/eax CPU & core count terminology in the same way.
+
 Tue Feb 11 2020 Todd Allen <todd.allen@etallen.com>
 	* Made new release.
 

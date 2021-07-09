@@ -46,7 +46,8 @@ Intel *Bridge, *well, *Lake, *Cove:
    10000 Series : Sunny Cove   : new architecture (Ice Lake)
                   Comet Lake   * optim of {Coffee, Whiskey} Lake (K,U)
    -----------------------------------------------------------------------------
-   future       : Willow Cove  : optim of Sunny Cove (Tiger Lake)
+   11000 ?      : Willow Cove  : optim of Sunny Cove (Tiger Lake) (10nm) [summer 2020?]
+                  Rocket Lake  : Willow Cove but with (14nm)
    -----------------------------------------------------------------------------
 
    * = I'm not treating this as a distinct uarch, but just as a core within its
@@ -68,27 +69,34 @@ Intel *Bridge, *well, *Lake, *Cove:
       Y      = extremely lower power (even lower than U)
       S      = special edition (>= 9000) or performance-optimized (<= 4000)
 
+   Xeon:
+      Grantley     / R3 = Broadwell
+      Purley       / P  = Skylake
+      Purley       / P  = Cascade Lake
+      Whitley      / P+ = Ice Lake
+      Eagle Stream      = Sapphire Rapids (based on Sunny Cove?) [2021]
+
 Intel Atom architectures:
 
-               Mobile phones  Notebooks      Servers       PCs           Embedded/Automotive      Network
-   -------------------------------------------------------------------------------------------------------
-   Bonnell     Silverthorne   Diamondville
-   Bonnell 2   Lincroft       Pineview                                   Tunnel Creek/Stellarton
-   Saltwell    Medfield       Cedarview      Centerton
-    "          Clover Trail
-   -------------------------------------------------------------------------------------------------------
-   Silvermont  Merrifield     Bay Trail      Avoton        Bay Trail     Bay Trail                Rangeley
-    "          Moorefield
-    "          SoFIA
-   Airmont                    Cherry Trail                 Braswell
-   -------------------------------------------------------------------------------------------------------
-   Goldmont                   Willow Trail*  Denverton     Apollo Lake   Apollo Lake
-                              Apollo Lake
-   Goldmont+                                               Gemini Lake
-   -------------------------------------------------------------------------------------------------------
-   Tremont                                   Elkhart Lake  Skyhawk Lake/
-                                                           Jasper Lake
-   -------------------------------------------------------------------------------------------------------
+                     Mobile phones  Notebooks      Servers       PCs           Embedded/Automotive      Network
+   -------------------------------------------------------------------------------------------------------------
+   2008  Bonnell     Silverthorne   Diamondville
+         Bonnell 2   Lincroft       Pineview                                   Tunnel Creek/Stellarton
+   2011  Saltwell    Medfield       Cedarview      Centerton
+          "          Clover Trail
+   -------------------------------------------------------------------------------------------------------------
+   2013  Silvermont  Merrifield     Bay Trail      Avoton        Bay Trail     Bay Trail                Rangeley
+          "          Moorefield
+          "          SoFIA
+   2015  Airmont                    Cherry Trail                 Braswell
+   -------------------------------------------------------------------------------------------------------------
+   2016  Goldmont                   Willow Trail*  Denverton     Apollo Lake   Apollo Lake
+                                    Apollo Lake
+   2017  Goldmont+                                               Gemini Lake
+   -------------------------------------------------------------------------------------------------------------
+   2020  Tremont                                   Elkhart Lake  Skyhawk Lake/
+                                                                 Jasper Lake
+   -------------------------------------------------------------------------------------------------------------
 
    Mobile phones:
 
@@ -154,6 +162,8 @@ Intel Atom architectures:
       -----------------------------------------------------
       Silvermont   Rangeley       ?              Rangeley
       -----------------------------------------------------
+      Tremont      ?              ?              Snow Ridge
+      -----------------------------------------------------
    
    * Canceled core
    ! Surprising use of wrong-market core
@@ -212,12 +222,16 @@ AMD Bobcat and later:
     (+)         Bristol Ridge/Stoney Ridge     Bristol Ridge/Stoney Ridge                              Prairie Falcon
    -----------------------------------------------------------------------------------------------------------------------------------
    Jaguar       Kabini                         Kabini/Temash               Kyoto                       Kabini             
-   Puma (2014)                                 Beema/Mullins                                           Steppe Eagle/Crowned Eagle
+   Puma (2014)                                 Beema/Mullins                                           Steppe Eagle (SoC)/Crowned Eagle (CPU)
    -----------------------------------------------------------------------------------------------------------------------------------
    Zen          Summit Ridge                   Raven Ridge                 Naples/Snowy Owl            Great Horned Owl/Banded Kestrel
    Zen+         Pinnacle Ridge/Picasso/Colfax  Picasso
+                Dali                           Dali
    Zen 2        Castle Peak                                                Rome
     (update)    Matisse                        Renoir                                                  Dali
+   ---future--------------------------------------------------------------------------------------------------------------------------
+   Zen 3 (7nm)  Vermeer                                                    Milan [late 2020]
+   Zen 4 (5nm)                                                             Genoa [in 2022]
    -----------------------------------------------------------------------------------------------------------------------------------
 
    A-Series = APU (Desktop/Mobile)
