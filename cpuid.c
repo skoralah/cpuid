@@ -8092,6 +8092,22 @@ print_80000020_0_ebx(unsigned int  value)
 }
 
 static void
+print_80000021_eax(unsigned int value)
+{
+   static named_item names[]
+      = { { "no nested data-breakpoints"              ,  0,  0, bools },
+          { "LFENCE always serializing"               ,  2,  2, bools },
+          { "SMM paging configuration lock support"   ,  3,  3, bools },
+          { "null selector clears base"               ,  6,  6, bools },
+          { "prefetch control MSR support"            , 13, 13, bools },
+        };
+
+   printf("   Extended Feature 2 EAX (0x80000021/eax):\n");
+   print_names(value, names, LENGTH(names),
+               /* max_len => */ 39);
+}
+
+static void
 print_80860001_eax(unsigned int  value)
 {
    static named_item  names[]
@@ -9047,6 +9063,8 @@ print_reg (unsigned int        reg,
       } else {
          print_reg_raw(reg, try, words);
       }
+   } else if (reg == 0x80000021) {
+      print_80000021_eax(words[WORD_EAX]);
    } else if (reg == 0x80860000) {
       // max already set to words[WORD_EAX]
    } else if (reg == 0x80860001) {
