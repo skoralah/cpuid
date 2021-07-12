@@ -7691,17 +7691,27 @@ print_80000008_ebx(unsigned int  value)
       = { { "CLZERO instruction"                      ,  0,  0, bools },
           { "instructions retired count support"      ,  1,  1, bools },
           { "always save/restore error pointers"      ,  2,  2, bools },
+          { "INVLPGB instruction"                     ,  3,  3, bools },
           { "RDPRU instruction"                       ,  4,  4, bools },
           { "memory bandwidth enforcement"            ,  6,  6, bools }, // SKC*
+          { "MCOMMIT instruction"                     ,  8,  8, bools },
           { "WBNOINVD instruction"                    ,  9,  9, bools },
           { "IBPB: indirect branch prediction barrier", 12, 12, bools },
+          { "interruptible WBINVD, WBNOINVD"          , 13, 13, bools },
           { "IBRS: indirect branch restr speculation" , 14, 14, bools },
           { "STIBP: 1 thr indirect branch predictor"  , 15, 15, bools }, // Qemu*
           { "STIBP always on preferred mode"          , 17, 17, bools }, // LX*
+          { "IBRS preferred over software solution"   , 18, 18, bools },
+          { "IBRS provides same mode protection"      , 19, 19, bools },
+          { "EFER[LMSLE] not supported"               , 20, 20, bools },
+          { "TLB flush nested"                        , 21, 21, bools },
           { "ppin processor id number supported"      , 23, 23, bools }, // Xen*
           { "SSBD: speculative store bypass disable"  , 24, 24, bools },
           { "virtualized SSBD"                        , 25, 25, bools },
           { "SSBD fixed in hardware"                  , 26, 26, bools },
+          { "CPPC: collaborative processor perf ctrl" , 27, 27, bools },
+          { "PSFD: predictive store forward disable"  , 28, 28, bools },
+          { "branch sampling feature support"         , 31, 31, bools },
         };
 
    printf("   Extended Feature Extensions ID (0x80000008/ebx):\n");
@@ -7726,7 +7736,8 @@ static void
 print_80000008_edx(unsigned int  value)
 {
    static named_item  names[]
-      = { { "RDPRU instruction max input support"     , 16, 23, NIL_IMAGES },
+      = { { "max page count for INVLPGB instruction"  ,  0, 15, NIL_IMAGES },
+          { "RDPRU instruction max input support"     , 16, 23, NIL_IMAGES },
         };
  
    printf("   Feature Extended Size (0x80000008/edx):\n");
@@ -7765,7 +7776,9 @@ print_8000000a_edx(unsigned int  value)
           { "virtualized VMLOAD/VMSAVE"               , 15, 15, bools },
           { "virtualized global interrupt flag (GIF)" , 16, 16, bools },
           { "GMET: guest mode execute trap"           , 17, 17, bools },
+          { "supervisor shadow stack"                 , 19, 19, bools },
           { "guest Spec_ctl support"                  , 20, 20, bools },
+          { "host MCE override"                       , 23, 23, bools },
           { "INVLPGB/TLBSYNC hyperv interc enable"    , 24, 24, bools },
         };
 
@@ -8048,6 +8061,7 @@ print_8000001f_eax(unsigned int  value)
           { "alternate injection"                     , 13, 13, bools },
           { "full debug state swap for SEV-ES guests" , 14, 14, bools },
           { "disallowing IBS use by host"             , 15, 15, bools },
+          { "VTE: SEV virtual transparent encryption" , 16, 16, bools },
         };
 
    print_names(value, names, LENGTH(names),
