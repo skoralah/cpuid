@@ -4288,6 +4288,7 @@ decode_synth_amd(unsigned int         val,
    FMS ( 8,15,  7, 1,  0,     "AMD Ryzen (Matisse B0)"); // undocumented, but samples from Steven Noonan
    FM  ( 8,15,  7, 1,         "AMD Ryzen (Matisse)"); // undocumented, but samples from Steven Noonan
    F   ( 8,15,                "AMD (unknown model)");
+   FM  (10,15,  0, 1,         "AMD EPYC (Milan)");
    F   (10,15,                "AMD (unknown model)"); // undocumented, but samples from Steven Noonan
    DEFAULT                  ("unknown");
 
